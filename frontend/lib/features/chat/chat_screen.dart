@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:math';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import 'package:confetti/confetti.dart';
@@ -6,6 +10,7 @@ import '../ranking/ranking_screen.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import '../../widgets/voice_orb.dart';
+import '../../widgets/starfield_background.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -49,9 +54,34 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   double soundLevel = 0;
 
+  bool isThinking = false;
+
+  String streamingText = "";
+
+  bool isStreaming = false;
+
+  double aiSoundLevel = 0;
+
   @override
   void initState() {
     super.initState();
+
+    Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (isThinking) {
+        setState(() {
+          thinkingDots++;
+
+          if (thinkingDots > 3) {
+            thinkingDots = 1;
+          }
+        });
+      }
+    });
 
     _confettiController = ConfettiController(
       duration: const Duration(seconds: 2),
@@ -79,8 +109,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _speech = stt.SpeechToText();
 
     initTts();
-
-    awaitTts();
   }
 
   @override
@@ -141,7 +169,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       });
 
       await _speech.listen(
-        localeId: "en_US",
+        localeId: "en-US",
         partialResults: true,
         onSoundLevelChange: (level) {
           setState(() {
@@ -159,6 +187,29 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
   }
 
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        // Pequeno delay para garantir que o ListView calculou o tamanho da animação
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (_scrollController.hasClients) {
+            _scrollController.animateTo(
+              _scrollController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 700),
+              curve: Curves.easeOut,
+            );
+          }
+        });
+      }
+    });
+  }
+
+  void _scrollStreaming() {
+    if (!_scrollController.hasClients) return;
+
+    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+  }
+
   Future<void> stopListening() async {
     await _speech.stop();
 
@@ -171,26 +222,33 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Future<void> initTts() async {
     _tts = FlutterTts();
 
-    await _tts.awaitSpeakCompletion(true);
-
-    await _tts.setSharedInstance(true);
+    // Configurações de áudio para garantir que saia no alto-falante
+    await _tts.setIosAudioCategory(IosTextToSpeechAudioCategory.playback, [
+      IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+      IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+      IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+    ], IosTextToSpeechAudioMode.voicePrompt);
 
     await _tts.setLanguage("en-US");
-
     await _tts.setSpeechRate(0.45);
-
     await _tts.setPitch(1.0);
+    await _tts.setVolume(1.0); // Garante volume no máximo do app
 
-    await _tts.setVoice({"name": "en-us-x-tpf-local", "locale": "en-US"});
+    // O pulo do gato: desative o awaitSpeakCompletion para teste
+    await _tts.awaitSpeakCompletion(true);
 
-    _tts.setCompletionHandler(() async {
-      setState(() {
-        voiceState = "idle";
-      });
-
+    _tts.setCompletionHandler(() {
+      if (!mounted) return;
+      setState(() => voiceState = "idle");
       if (voiceModeEnabled) {
-        await startListening();
+        startListening();
       }
+    });
+
+    // Handler de erro para você ver no console se algo falhar
+    _tts.setErrorHandler((msg) {
+      print("Erro no TTS: $msg");
+      setState(() => voiceState = "idle");
     });
   }
 
@@ -200,125 +258,279 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     setState(() {
       messages.add({"sender": "user", "text": userText});
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-
-        duration: const Duration(milliseconds: 400),
-
-        curve: Curves.easeOut,
-      );
-    });
-    setState(() {
+      isThinking = true;
       voiceState = "thinking";
     });
 
-    final result = await ApiClient.post("/chat", {
-      "user_id": "ad32edbf-b496-4e9a-9907-f52aba6a518d",
-      "message": userText,
-    });
-
-    final aiReply = result["ai_response"]["conversation_reply"] ?? "";
-    setState(() {
-      voiceState = "speaking";
-    });
-    await _tts.speak(aiReply);
-
+    _scrollToBottom();
     _controller.clear();
 
-    String oldLeague = league;
-
-    setState(() {
-      messages.add({
-        "sender": "ai",
-        "text": aiReply,
-
-        "correction": result["ai_response"]["correction"] ?? "",
-        "explanation": result["ai_response"]["explanation_pt"] ?? "",
-        "example": result["ai_response"]["example"] ?? "",
-        "exercise": result["ai_response"]["exercise"] ?? "",
+    try {
+      final result = await ApiClient.post("/chat", {
+        "user_id": "ad32edbf-b496-4e9a-9907-f52aba6a518d",
+        "message": userText,
       });
 
-      earnedXp = result["xp"]["earned"];
-      totalXp = result["xp"]["total"];
-      progressPercent = result["xp"]["level"]["progress_percentage"];
+      if (result == null || result["ai_response"] == null) {
+        throw Exception("Resposta inválida do servidor");
+      }
 
-      league = result["xp"]["level"]["name"];
-    });
+      final aiReply = result["ai_response"]["conversation_reply"] ?? "";
+      String oldLeague = league;
 
-    Future.delayed(const Duration(milliseconds: 100), () {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    });
-
-    // 🎉 XP animation
-    if (earnedXp > 0) {
-      setState(() => showXp = true);
-      _xpController.forward(from: 0);
-
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) setState(() => showXp = false);
+      setState(() {
+        isThinking = false;
+        // showFeedback = false;
+        voiceState = "speaking";
       });
-    }
 
-    // 🏆 Badge
-    if (result["badges_earned"] != null && result["badges_earned"].isNotEmpty) {
-      newBadgeTitle = result["badges_earned"][0]["title"];
-      setState(() => showBadge = true);
+      // 🔥 CORREÇÃO: Chame o streamResponse APENAS UMA VEZ aqui
+      await streamResponse(aiReply);
 
-      _confettiController.play();
-      await _audioPlayer.play(AssetSource('sounds/victory.mp3'));
+      setState(() {
+        messages.add({
+          "sender": "ai",
+          "text": aiReply,
+          "showFeedback": false,
+          "correction": result["ai_response"]["correction"] ?? "",
+          "explanation": result["ai_response"]["explanation_pt"] ?? "",
+          "example": result["ai_response"]["example"] ?? "",
+          "exercise": result["ai_response"]["exercise"] ?? "",
+        });
 
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) setState(() => showBadge = false);
+        // 🔥 PROTEÇÃO TOTAL CONTRA ERRO DE INT/DOUBLE
+        earnedXp =
+            int.tryParse(result["xp"]?["earned"]?.toString() ?? "0") ?? 0;
+        totalXp = int.tryParse(result["xp"]?["total"]?.toString() ?? "0") ?? 0;
+
+        // Use .toInt() para converter o valor, em vez de "as int"
+        progressPercent =
+            (double.tryParse(
+                      result["xp"]?["level"]?["progress_percentage"]
+                              ?.toString() ??
+                          "0",
+                    ) ??
+                    0.0)
+                .toInt();
+
+        league = result["xp"]?["level"]?["name"] ?? "Bronze";
       });
-    }
 
-    // 🚀 League Up
-    if (oldLeague != league) {
-      triggerLeagueUpAnimation();
+      // Feedback visual/sonoro após o streaming
+      Future.delayed(const Duration(milliseconds: 500), () async {
+        if (!mounted) return;
+
+        setState(() {
+          messages.last["showFeedback"] = true;
+        });
+
+        await Future.delayed(const Duration(milliseconds: 50));
+
+        // 🔥 SCROLL DO FEEDBACK
+        _scrollToBottom();
+
+        if ((result["ai_response"]["correction"] ?? "").isNotEmpty) {
+          await _audioPlayer.play(AssetSource('sounds/holographic_ping.mp3'));
+        }
+      });
+
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+
+      // --- Lógica do TTS ---
+      String textToSpeak = aiReply.replaceAll(RegExp(r'[*_#]'), '');
+      await _tts.stop();
+      await _tts.setLanguage("en-US");
+      await _tts.setSpeechRate(0.45);
+
+      if (textToSpeak.isNotEmpty) {
+        await _tts.speak(textToSpeak);
+      }
+
+      // --- Gamificação ---
+      if (earnedXp > 0) {
+        setState(() => showXp = true);
+        _xpController.forward(from: 0);
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) setState(() => showXp = false);
+        });
+      }
+
+      if (result["badges_earned"] != null &&
+          (result["badges_earned"] as List).isNotEmpty) {
+        setState(() {
+          newBadgeTitle = result["badges_earned"][0]["title"] ?? "";
+          showBadge = true;
+        });
+        _confettiController.play();
+        _audioPlayer.play(AssetSource('sounds/victory.mp3'));
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) setState(() => showBadge = false);
+        });
+      }
+
+      if (oldLeague != league) {
+        triggerLeagueUpAnimation();
+      }
+    } catch (e) {
+      print("Erro no envio: $e");
+      setState(() {
+        isThinking = false;
+        voiceState = "idle";
+        messages.add({
+          "sender": "ai",
+          "text":
+              "Sorry, I'm having trouble connecting. Please check your internet. 📡",
+        });
+      });
     }
   }
 
   Widget buildMessage(Map<String, dynamic> message) {
     final isUser = message["sender"] == "user";
 
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+    // O TweenAnimationBuilder envolve todo o conteúdo para animar a entrada
+    return TweenAnimationBuilder(
+      duration: const Duration(
+        milliseconds: 600,
+      ), // Um pouco mais lento fica mais elegante
+      tween: Tween<double>(begin: 0, end: 1),
+      curve: Curves.easeOutCubic,
+      builder: (context, double value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(
+              isUser ? 40 * (1 - value) : -40 * (1 - value),
 
-      child: Column(
-        crossAxisAlignment: isUser
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
-
-        children: [
-          // 💬 BOLHA CHAT
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 6),
-            padding: const EdgeInsets.all(12),
-            constraints: const BoxConstraints(maxWidth: 280),
-
-            decoration: BoxDecoration(
-              color: isUser ? Colors.blue : Colors.grey.shade300,
-
-              borderRadius: BorderRadius.circular(16),
+              20 * (1 - value),
             ),
-
-            child: Text(
-              message["text"] ?? "",
-
-              style: TextStyle(color: isUser ? Colors.white : Colors.black87),
+            child: Transform.scale(
+              scale: 0.96 + (value * 0.04),
+              // Desliza 30 pixels para cima
+              child: child,
             ),
           ),
+        );
+      },
+      child: Align(
+        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+        child: Column(
+          crossAxisAlignment: isUser
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            // 💬 BOLHA CHAT COM GLASSMORPHISM
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 6),
+              constraints: const BoxConstraints(maxWidth: 280),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                clipBehavior: Clip.antiAlias,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(22),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
 
-          // ✨ FEEDBACK CARD
-          if (!isUser) buildFeedbackCard(message),
-        ],
+                        colors: isUser
+                            ? [
+                                Colors.cyanAccent.withOpacity(0.22),
+
+                                Colors.blueAccent.withOpacity(0.12),
+
+                                Colors.white.withOpacity(0.03),
+                              ]
+                            : [
+                                Colors.deepPurpleAccent.withOpacity(0.18),
+
+                                Colors.purpleAccent.withOpacity(0.08),
+
+                                Colors.white.withOpacity(0.03),
+                              ],
+                      ),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.18),
+                        width: 1.2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isUser
+                              ? Colors.cyanAccent.withOpacity(0.16)
+                              : Colors.deepPurpleAccent.withOpacity(0.18),
+
+                          blurRadius: 28,
+                          spreadRadius: 2,
+                          offset: const Offset(0, 10),
+                        ),
+
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.25),
+
+                          blurRadius: 25,
+                          offset: const Offset(0, 12),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      children: [
+                        // 🌌 INNER LIGHT
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+
+                          child: Container(
+                            height: 16,
+
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.only(
+                                topLeft: Radius.circular(22),
+                                topRight: Radius.circular(22),
+                              ),
+
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+
+                                colors: [
+                                  Colors.white.withOpacity(0.035),
+
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        // 💬 MESSAGE TEXT
+                        Text(
+                          message["text"] ?? "",
+
+                          style: TextStyle(
+                            color: isUser
+                                ? Colors.white
+                                : Colors.white.withOpacity(0.9),
+
+                            fontSize: 15,
+                            height: 1.4,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // ✨ FEEDBACK CARD
+            if (!isUser) buildFeedbackCard(message),
+          ],
+        ),
       ),
     );
   }
@@ -330,60 +542,213 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       return const SizedBox();
     }
 
-    return Container(
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.deepPurple.shade900,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.greenAccent, width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.greenAccent.withOpacity(0.25),
-            blurRadius: 12,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "✨ Grammar Feedback",
-            style: TextStyle(
-              color: Colors.greenAccent,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+    if (!(message["showFeedback"] ?? false)) {
+      return const SizedBox();
+    }
+
+    return TweenAnimationBuilder(
+      duration: const Duration(milliseconds: 1200),
+      tween: Tween<double>(begin: 0, end: 1),
+      curve: Curves.easeOutExpo,
+      builder: (context, double value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 40 * (1 - value)), // Sobe de 40 para 0
+            child: Transform.scale(
+              scale: 0.92 + (value * 0.08), // Aumenta de 0.92 para 1.0
+              child: child,
             ),
           ),
+        );
+      },
+      // 🔥 O SEU CARD ENTRA AQUI COMO CHILD:
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
 
-          const SizedBox(height: 14),
+                colors: [
+                  Colors.white.withOpacity(0.12),
 
-          Text(
-            "✅ Correction:\n${message["correction"]}",
-            style: const TextStyle(color: Colors.white),
+                  Colors.deepPurpleAccent.withOpacity(0.08),
+
+                  Colors.cyanAccent.withOpacity(0.03),
+                ],
+              ),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.18),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.25),
+                  blurRadius: 35,
+                  spreadRadius: 3,
+                  offset: const Offset(0, 10),
+                ),
+                BoxShadow(
+                  color: Colors.deepPurpleAccent.withOpacity(0.18),
+                  blurRadius: 18,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "🌌 AI Feedback",
+                  style: TextStyle(
+                    color: Colors.greenAccent,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.8,
+
+                    shadows: [
+                      Shadow(color: Colors.greenAccent, blurRadius: 14),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  "✅ Correction:\n${message["correction"]}",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  "📘 Explanation:\n${message["explanation"]}",
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  "💡 Example:\n${message["example"]}",
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  "🧠 Exercise:\n${message["exercise"]}",
+                  style: const TextStyle(
+                    color: Colors.amber,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  int thinkingDots = 1;
+
+  Widget buildThinkingIndicator() {
+    return Align(
+      alignment: Alignment.centerLeft,
+
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 8),
+
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+
+          gradient: LinearGradient(
+            colors: [
+              Colors.deepPurpleAccent.withOpacity(0.22),
+              Colors.blueGrey.withOpacity(0.12),
+            ],
           ),
 
-          const SizedBox(height: 10),
+          border: Border.all(color: Colors.white.withOpacity(0.1)),
+        ),
 
-          Text(
-            "📘 Explanation:\n${message["explanation"]}",
-            style: const TextStyle(color: Colors.white70),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+
+          children: [
+            const Text(
+              "AI is thinking",
+              style: TextStyle(color: Colors.white70),
+            ),
+
+            const SizedBox(width: 12),
+
+            SizedBox(
+              width: 40,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+
+                transitionBuilder: (child, animation) {
+                  return FadeTransition(opacity: animation, child: child);
+                },
+
+                child: Text(
+                  "." * thinkingDots,
+
+                  key: ValueKey(thinkingDots),
+
+                  style: const TextStyle(color: Colors.white, fontSize: 22),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget buildStreamingMessage() {
+    return Align(
+      alignment: Alignment.centerLeft,
+
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+
+        padding: const EdgeInsets.all(14),
+
+        constraints: const BoxConstraints(maxWidth: 280),
+
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+
+          gradient: LinearGradient(
+            colors: [
+              Colors.deepPurpleAccent.withOpacity(0.22),
+              Colors.blueGrey.withOpacity(0.15),
+            ],
           ),
 
-          const SizedBox(height: 10),
+          border: Border.all(color: Colors.white.withOpacity(0.1)),
 
-          Text(
-            "💡 Example:\n${message["example"]}",
-            style: const TextStyle(color: Colors.white70),
-          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.deepPurpleAccent.withOpacity(0.18),
 
-          const SizedBox(height: 10),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
 
-          Text(
-            "🧠 Exercise:\n${message["exercise"]}",
-            style: const TextStyle(color: Colors.amber),
-          ),
-        ],
+        child: Text(
+          streamingText,
+
+          style: const TextStyle(color: Colors.white, fontSize: 15),
+        ),
       ),
     );
   }
@@ -408,6 +773,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       ),
       body: Stack(
         children: [
+          // 🌌 CAMADA 0: O FUNDO DE ESTRELAS/PARTÍCULAS
+          const Positioned.fill(child: StarfieldBackground()),
+
           Column(
             children: [
               // 🔥 HEADER PREMIUM
@@ -453,8 +821,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 18),
                   child: VoiceOrb(
-                    state: voiceState,  
-                    soundLevel: soundLevel,),
+                    state: voiceState,
+                    soundLevel: voiceState == "speaking"
+                        ? aiSoundLevel
+                        : soundLevel,
+                  ),
                 ),
               ),
               // 💬 CHAT AREA
@@ -462,8 +833,28 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 child: ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
-                  itemCount: messages.length,
+                  itemCount:
+                      messages.length +
+                      (isThinking ? 1 : 0) +
+                      (isStreaming ? 1 : 0),
+                  physics:
+                      const BouncingScrollPhysics(), // Melhora a sensação de scroll
+
                   itemBuilder: (context, index) {
+                    if (index < messages.length) {
+                      return buildMessage(messages[index]);
+                    }
+
+                    if (isThinking && index == messages.length) {
+                      return buildThinkingIndicator();
+                    }
+
+                    if (isStreaming) {
+                      return buildStreamingMessage();
+                    }
+
+                    return const SizedBox();
+
                     return buildMessage(messages[index]);
                   },
                 ),
@@ -673,5 +1064,47 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         });
       }
     });
+  }
+
+  Future<void> _setupAudioAndTts() async {
+    await initTts(); // Primeiro inicializa e configura os handlers
+    await _tts.setLanguage("en-US");
+    await _tts.setSpeechRate(0.45);
+  }
+
+  Future<void> streamResponse(String text) async {
+    setState(() {
+      isThinking = false; // Garante que o loading pare
+      isStreaming = true;
+      streamingText = "";
+    });
+
+    final words = text.split(" ");
+    for (final word in words) {
+      if (!mounted) return; // Segurança caso o usuário saia da tela
+
+      setState(() {
+        streamingText += "$word ";
+        aiSoundLevel = 10 + Random().nextDouble() * 25;
+      });
+
+      int delay = 110;
+
+      if (word.contains(".") || word.contains("!") || word.contains("?")) {
+        delay = 320;
+      } else if (word.contains(",")) {
+        delay = 180;
+      }
+
+      await Future.delayed(Duration(milliseconds: delay));
+      _scrollStreaming();
+    }
+
+    // Não resetamos o isStreaming aqui imediatamente para evitar o "flicker" (piscada)
+    // Deixamos o sendMessage cuidar da transição final.
+    setState(() {
+      isStreaming = false;
+    });
+    aiSoundLevel = 0;
   }
 }

@@ -1,4 +1,11 @@
+from app.models.user_memory import (
+    get_user_memory,
+    update_memory_from_message
+)
+
+from app.services.level_service import detect_english_level
 from fastapi import APIRouter, Depends
+from sqlalchemy import Column, Integer, String, JSON
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.models.chat_schemas import ChatRequest
@@ -18,6 +25,7 @@ from app.services.xp_service import get_level_from_xp
 from datetime import date
 from app.models.weekly_xp import WeeklyXP
 from datetime import timedelta
+from app.core.database import Base  # Certifique-se de importar seu Base correto
 
 router = APIRouter()
 
@@ -32,9 +40,7 @@ def get_db():
 
 @router.post("/chat")
 def chat(request: ChatRequest, db: Session = Depends(get_db)):
-
     try:
-
         # 🔹 1️⃣ Se já existe conversation_id → usar
         if request.conversation_id:
             conversation = db.query(Conversation).filter(
@@ -70,15 +76,21 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         ).order_by(Message.created_at.asc()).all()
 
         messages_for_ai = []
-
         for msg in history[-8:]:
             messages_for_ai.append({
                 "role": "assistant" if msg.sender == "ai" else "user",
                 "content": msg.content
             })
 
-        # 🔹 5️⃣ Chamar IA
-        ai_response_dict = generate_response(messages_for_ai)
+        # 🔥 [AQUI] BUSCA A MEMÓRIA DO USUÁRIO ANTES DA IA RESPONDER
+        # Se você quiser passar a memória para a IA, você pode injetar o JSON no 'messages_for_ai'
+        user_memory = get_user_memory(
+            db,
+            request.user_id
+        )
+
+        # 🔹 5️⃣ Chamar IA (passando o histórico)
+        ai_response_dict = generate_response(messages_for_ai, user_memory.data)
         if "error" in ai_response_dict:
             return ai_response_dict
 
@@ -94,6 +106,16 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         db.add(ai_message)
         db.commit()
 
+        # 🔥 [AQUI] ATUALIZA A MEMÓRIA DO USUÁRIO COM A CORREÇÃO DA IA
+        # Extrai a correção que veio da IA (ajuste a chave do dicionário se necessário)
+        ai_correction = ai_response_dict.get("correction", "")
+        update_memory_from_message(
+            db=db,
+            user_id=request.user_id,
+            user_message=request.message,
+            correction=ai_correction
+        )
+
         # 🔹 8️⃣ Calcular score da conversa
         conversation_messages = db.query(Message).filter(
             Message.conversation_id == conversation.id
@@ -107,7 +129,6 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             conversation_id=conversation.id,
             score=score
         )
-
         db.add(progress)
         db.commit()
 
@@ -117,10 +138,9 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         ).all()
 
         global_score = calculate_global_score(all_progress)
-
         cefr_level = get_level(global_score)
 
-        # 🔹 🔥 10️⃣ Atualizar streak
+        # 🔹 🔟 Atualizar streak
         streak = db.query(Streak).filter(
             Streak.user_id == request.user_id
         ).first()
@@ -134,8 +154,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         streak = update_streak(streak)
         db.commit()
 
-
-    # 🔥 XP SYSTEM
+        # 🔥 XP SYSTEM
         had_error = score < 100
 
         xp_record = db.query(XP).filter(
@@ -155,8 +174,6 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
 
         # 🔥 WEEKLY XP SYSTEM
         today = date.today()
-
-        # início da semana (segunda-feira)
         week_start = today - timedelta(days=today.weekday())
 
         weekly_record = db.query(WeeklyXP).filter(
@@ -177,13 +194,9 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         weekly_record.total_xp += earned_xp
         db.commit()
 
-
-        
-
         level_data = get_level_from_xp(xp_record.total_xp)
 
         from app.services.badge_service import check_and_award_badges
-
         badges_earned = check_and_award_badges(
             db=db,
             user_id=request.user_id,
@@ -194,9 +207,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         )
 
         from app.services.weekly_service import check_and_close_week
-
         check_and_close_week(db)
-
 
         return {
             "conversation_id": conversation.id,
@@ -206,18 +217,17 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
                 "current": streak.current_streak,
                 "longest": streak.longest_streak
             },
-
             "xp": {
                 "earned": earned_xp,
                 "total": xp_record.total_xp,
                 "level": level_data
             },
+            "badges_earned": badges_earned,
+            # Se quiser, pode retornar a memória atualizada na API também:
+            "user_memory": user_memory.data
+        }
 
-            "badges_earned": badges_earned
-                }
-        
     except Exception as e:
-
         return {
             "error": str(e)
         }

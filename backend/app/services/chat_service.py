@@ -1,5 +1,3 @@
-
-
 import requests
 import json
 import time
@@ -69,11 +67,54 @@ IMPORTANT:
 ONLY RETURN VALID JSON.
 """
 
+def generate_response(messages: list, memory_data: dict):
 
-def generate_response(messages):
+    # 🔹 Otimização dos erros comuns
+    common_errors = memory_data.get("common_errors", {})
+    if not isinstance(common_errors, dict):
+        common_errors = {}
 
+    sorted_errors = sorted(
+        common_errors.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    top_errors = [
+        error[0]
+        for error in sorted_errors[:3]
+    ]
+
+    # 💥 INTEGRANDO SUA NOVA LÓGICA DE TÓPICOS E PERFIL AQUI:
+    favorite_topics = memory_data.get(
+        "favorite_topics",
+        []
+    )
+
+    learning_profile = (
+        f"casual learner interested in "
+        f"{', '.join(favorite_topics)}"
+        if favorite_topics
+        else "general English learner"
+    )
+
+    # Substitui o bloco antigo pelo seu novo 'memory_context' super completo
+    memory_context = f"""
+User profile:
+- English level: {memory_data.get("english_level", "A1")}
+- Most common mistakes: {", ".join(top_errors) if top_errors else "None yet"}
+- Preferred style: {memory_data.get("conversation_style", "casual")}
+- Total conversations: {memory_data.get("total_conversations", 0)}
+- Favorite topics: {", ".join(favorite_topics) if favorite_topics else "None yet"}
+- Learning profile: {learning_profile}
+"""
+
+    # 🔹 Une a instrução base com a nova memória dinâmica filtrada
+    dynamic_system_instruction = SYSTEM_INSTRUCTION + memory_context
+
+    # 🔹 Monta o payload para a IA
     full_messages = [
-        {"role": "system", "content": SYSTEM_INSTRUCTION}
+        {"role": "system", "content": dynamic_system_instruction}
     ] + messages
 
     payload = {
@@ -106,7 +147,6 @@ def generate_response(messages):
         result = response.json()
 
     except Exception as e:
-
         return {
             "error": str(e)
         }
@@ -116,6 +156,7 @@ def generate_response(messages):
 
     text = result["choices"][0]["message"]["content"]
     
+    # Limpa possíveis blocos de Markdown injetados pela IA
     text = text.replace("```json", "").replace("```", "").strip()
 
     try:
