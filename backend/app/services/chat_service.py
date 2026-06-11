@@ -1,3 +1,9 @@
+
+from app.services.memory_utils import (
+    get_top_errors,
+    get_top_topics
+)
+
 import requests
 import json
 import time
@@ -70,31 +76,29 @@ ONLY RETURN VALID JSON.
 def generate_response(messages: list, memory_data: dict):
 
     # 🔹 Otimização dos erros comuns
-    common_errors = memory_data.get("common_errors", {})
-    if not isinstance(common_errors, dict):
-        common_errors = {}
-
-    sorted_errors = sorted(
-        common_errors.items(),
-        key=lambda x: x[1],
-        reverse=True
+    top_errors = get_top_errors(
+    memory_data.get(
+        "common_errors",
+        {}
     )
-
-    top_errors = [
-        error[0]
-        for error in sorted_errors[:3]
-    ]
+)
 
     # 💥 INTEGRANDO SUA NOVA LÓGICA DE TÓPICOS E PERFIL AQUI:
     favorite_topics = memory_data.get(
         "favorite_topics",
-        []
+        {}
     )
+    if not isinstance(favorite_topics, dict):
+        favorite_topics = {}
+    top_topics = get_top_topics(
+        favorite_topics
+    )
+       
 
     learning_profile = (
         f"casual learner interested in "
-        f"{', '.join(favorite_topics)}"
-        if favorite_topics
+        f"{', '.join(top_topics)}"
+        if top_topics
         else "general English learner"
     )
 
@@ -105,9 +109,13 @@ User profile:
 - Most common mistakes: {", ".join(top_errors) if top_errors else "None yet"}
 - Preferred style: {memory_data.get("conversation_style", "casual")}
 - Total conversations: {memory_data.get("total_conversations", 0)}
-- Favorite topics: {", ".join(favorite_topics) if favorite_topics else "None yet"}
+- Favorite topics: {", ".join(top_topics) if top_topics else "None yet"}
 - Learning profile: {learning_profile}
+print("=== MEMORY CONTEXT ===")
+print(memory_context)
 """
+    
+
 
     # 🔹 Une a instrução base com a nova memória dinâmica filtrada
     dynamic_system_instruction = SYSTEM_INSTRUCTION + memory_context

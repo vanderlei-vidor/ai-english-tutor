@@ -1,11 +1,14 @@
+
+
+
 from app.models.user_memory import (
     get_user_memory,
     update_memory_from_message
 )
 
-from app.services.level_service import detect_english_level
+
 from fastapi import APIRouter, Depends
-from sqlalchemy import Column, Integer, String, JSON
+
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.models.chat_schemas import ChatRequest
@@ -25,7 +28,7 @@ from app.services.xp_service import get_level_from_xp
 from datetime import date
 from app.models.weekly_xp import WeeklyXP
 from datetime import timedelta
-from app.core.database import Base  # Certifique-se de importar seu Base correto
+
 
 router = APIRouter()
 
@@ -114,6 +117,11 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             user_id=request.user_id,
             user_message=request.message,
             correction=ai_correction
+        )
+
+        user_memory = get_user_memory(
+            db,
+            request.user_id
         )
 
         # 🔹 8️⃣ Calcular score da conversa

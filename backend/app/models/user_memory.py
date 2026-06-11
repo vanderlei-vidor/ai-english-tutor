@@ -14,10 +14,11 @@ class UserMemory(Base):
 
 # 🔹 DICIONÁRIO DE TÓPICOS (Declarado aqui fora para organizar)
 TOPICS_DATABASE = {
-    "anime": ["anime", "naruto", "one piece"],
+    "technology": ["ai", "technology", "computer"],
     "games": ["game", "games", "minecraft"],
-    "books": ["book", "reading", "author"],
-    "technology": ["ai", "technology", "computer"]
+    "anime": ["anime", "naruto", "one piece"],
+    "books": ["book", "reading", "author"]
+    
 }
 
 
@@ -33,7 +34,7 @@ def get_user_memory(db: Session, user_id: str):
             data={
                 "english_level": "A1",
                 "common_errors": {},
-                "favorite_topics": [],
+                "favorite_topics": {},
                 "conversation_style": "casual",
                 "total_conversations": 0
             }
@@ -58,6 +59,12 @@ def update_memory_from_message(
     # Evita bugs de mutabilidade no SQLAlchemy criando uma cópia limpa
     data = dict(memory.data)
 
+    if not isinstance(
+        data.get("favorite_topics"),
+        dict
+    ):
+        data["favorite_topics"] = {}
+
     # 🔥 TOTAL CONVERSATIONS
     data["total_conversations"] += 1
 
@@ -72,7 +79,8 @@ def update_memory_from_message(
             if keyword in message_lower:
                 # Se o tópico mapeado ainda não está na lista do usuário, adiciona
                 if topic not in data["favorite_topics"]:
-                    data["favorite_topics"].append(topic)
+                    data["favorite_topics"] [topic] = 0
+                data["favorite_topics"] [topic] +=1
                 break # Para de checar outras palavras do mesmo tópico se já achou uma
 
     # 🔥 DETECT VERB TENSE ERROR
