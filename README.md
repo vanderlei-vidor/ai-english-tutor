@@ -23,7 +23,7 @@ The project was designed around the idea that language learning should feel enga
 ### Main Conversation Interface
 
 <p align="center">
-  <img width="350" alt="AI English Tutor Chat Interface" src="https://github.com/user-attachments/assets/727d0f39-0e07-4c9a-b0a8-79724c7bd2d8">
+  <img width="150" alt="AI English Tutor Chat Interface" src="https://github.com/user-attachments/assets/727d0f39-0e07-4c9a-b0a8-79724c7bd2d8">
 </p>
 
 <p align="center">
