@@ -177,8 +177,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         voiceState = "listening";
       });
 
+      var locales = await _speech.locales();
+
+      print("========== LOCALES ==========");
+
+      for (var locale in locales) {
+        print("${locale.localeId} -> ${locale.name}");
+      }
+
       await _speech.listen(
-        localeId: "en-US",
+        localeId: "en_US",
         partialResults: true,
         onSoundLevelChange: (level) {
           setState(() {
@@ -284,7 +292,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     try {
       final result = await ApiClient.post("/chat", {
-        "user_id": "ad32edbf-b496-4e9a-9907-f52aba6a518d",
+        "user_id": "60d65b5b-29be-413b-8de0-1fd91dcff3d1",
         "message": userText,
       });
 

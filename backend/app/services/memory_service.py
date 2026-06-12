@@ -17,7 +17,9 @@ def get_or_create_memory(db, user_id):
 
                 "common_errors": {},
 
-                "favorite_topics": [],
+                "favorite_topics": {},
+
+                "weak_skills": {},
 
                 "conversation_style": "casual",
 
