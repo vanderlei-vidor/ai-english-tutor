@@ -18,6 +18,19 @@ AI English Tutor goes beyond traditional chatbots by acting as a personalized la
 
 The project was designed around the idea that language learning should feel engaging, interactive, and personalized.
 
+## Screenshots
+
+### Main Conversation Interface
+
+<p align="center">
+  <img width="150" alt="AI English Tutor Chat Interface" src="https://github.com/user-attachments/assets/727d0f39-0e07-4c9a-b0a8-79724c7bd2d8">
+</p>
+
+<p align="center">
+  <em>Main conversational interface featuring adaptive AI interactions, grammar correction, and intelligent feedback.</em>
+</p>
+
+
 ## Key Features
 
 ### Conversational AI
