@@ -11,6 +11,10 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import '../../widgets/voice_orb.dart';
 import '../../widgets/starfield_background.dart';
+import 'widgets/CorrectionFeedbackCard.dart';
+import 'widgets/ExerciseCard.dart';
+import 'widgets/SuccessFeedbackCard.dart';
+import 'widgets/TeacherQuestionCard.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -177,13 +181,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         voiceState = "listening";
       });
 
-      var locales = await _speech.locales();
+      //var locales = await _speech.locales();
 
-      print("========== LOCALES ==========");
+     // print("========== LOCALES ==========");
 
-      for (var locale in locales) {
-        print("${locale.localeId} -> ${locale.name}");
-      }
+    //  for (var locale in locales) {
+    //    print("${locale.localeId} -> ${locale.name}");
+    //  }
 
       await _speech.listen(
         localeId: "en_US",
@@ -292,7 +296,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     try {
       final result = await ApiClient.post("/chat", {
-        "user_id": "60d65b5b-29be-413b-8de0-1fd91dcff3d1",
+        "user_id": "334dbf71-efc6-431c-8d0a-86d9ae8109a1",
         "message": userText,
       });
 
@@ -317,6 +321,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           "sender": "ai",
           "text": aiReply,
           "showFeedback": false,
+          "teacherAction":
+              result["ai_response"]["teacher_action"] ?? "chat",
           "correction": result["ai_response"]["correction"] ?? "",
           "explanation": result["ai_response"]["explanation_pt"] ?? "",
           "example": result["ai_response"]["example"] ?? "",
@@ -561,121 +567,80 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget buildFeedbackCard(Map<String, dynamic> message) {
-    final correction = message["correction"] ?? "";
+  // 1. Valida primeiro se o feedback já foi liberado para exibição
+  if (!(message["showFeedback"] ?? false)) {
+    return const SizedBox();
+  }
 
-    if (correction.isEmpty) {
-      return const SizedBox();
-    }
+  final correction = message["correction"] ?? "";
+  final explanation = message["explanation"] ?? "";
+  final exercise = message["exercise"] ?? "";
 
-    if (!(message["showFeedback"] ?? false)) {
-      return const SizedBox();
-    }
+  // Se tudo estiver completamente vazio (sem resposta da IA), não renderiza nada
+  if (correction.isEmpty && explanation.isEmpty && exercise.isEmpty) {
+    return const SizedBox();
+  }
 
-    return TweenAnimationBuilder(
-      duration: const Duration(milliseconds: 1200),
-      tween: Tween<double>(begin: 0, end: 1),
-      curve: Curves.easeOutExpo,
-      builder: (context, double value, child) {
-        return Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, 40 * (1 - value)), // Sobe de 40 para 0
-            child: Transform.scale(
-              scale: 0.92 + (value * 0.08), // Aumenta de 0.92 para 1.0
-              child: child,
-            ),
-          ),
-        );
-      },
-      // 🔥 O SEU CARD ENTRA AQUI COMO CHILD:
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-          child: Container(
-            margin: const EdgeInsets.only(top: 10),
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+  // 2. Define qual card principal exibir com base nas suas novas regras de negócio
+  final teacherAction =
+    message["teacherAction"] ?? "chat";
 
-                colors: [
-                  Colors.white.withOpacity(0.12),
+  Widget primaryCard;
 
-                  Colors.deepPurpleAccent.withOpacity(0.08),
+  switch (teacherAction) {
 
-                  Colors.cyanAccent.withOpacity(0.03),
-                ],
-              ),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.18),
-                width: 1.2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.25),
-                  blurRadius: 35,
-                  spreadRadius: 3,
-                  offset: const Offset(0, 10),
-                ),
-                BoxShadow(
-                  color: Colors.deepPurpleAccent.withOpacity(0.18),
-                  blurRadius: 18,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "🌌 AI Feedback",
-                  style: TextStyle(
-                    color: Colors.greenAccent,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.8,
+    case "correction":
 
-                    shadows: [
-                      Shadow(color: Colors.greenAccent, blurRadius: 14),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  "✅ Correction:\n${message["correction"]}",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  "📘 Explanation:\n${message["explanation"]}",
-                  style: const TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  "💡 Example:\n${message["example"]}",
-                  style: const TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  "🧠 Exercise:\n${message["exercise"]}",
-                  style: const TextStyle(
-                    color: Colors.amber,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
+      primaryCard = CorrectionFeedbackCard(
+        correction: correction,
+        explanation: explanation,
+        example: message["example"] ?? "",
+      );
+      break;
+
+    case "question":
+
+      primaryCard = TeacherQuestionCard(
+        question: message["text"] ?? "",
+      );
+      break;
+
+    case "exercise":
+
+      primaryCard = ExerciseCard(
+        exercise: exercise,
+      );
+      break;
+
+    case "chat":
+
+    default:
+
+      primaryCard = const SuccessFeedbackCard();
+      break;
+  }
+
+  // 3. Retorna a sua animação idêntica, mas agora animando a Column inteira
+  return TweenAnimationBuilder(
+    duration: const Duration(milliseconds: 1200),
+    tween: Tween<double>(begin: 0, end: 1),
+    curve: Curves.easeOutExpo,
+    builder: (context, double value, child) {
+      return Opacity(
+        opacity: value,
+        child: Transform.translate(
+          offset: Offset(0, 40 * (1 - value)), // Sobe de 40 para 0
+          child: Transform.scale(
+            scale: 0.92 + (value * 0.08), // Aumenta de 0.92 para 1.0
+            child: child,
           ),
         ),
-      ),
-    );
-  }
+      );
+    },
+    // 🔥 A mágica acontece aqui: passamos a Column contendo a combinação dos novos widgets
+    child: primaryCard,
+  );
+}
 
   int thinkingDots = 1;
 

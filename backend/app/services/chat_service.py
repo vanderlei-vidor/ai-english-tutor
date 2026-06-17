@@ -1,157 +1,312 @@
 import os
 import json
 import time
-import re
+import random
 import requests
 from dotenv import load_dotenv
 from app.services.memory_utils import get_top_errors, get_top_topics
 from app.services.exercise_engine import should_generate_exercise, choose_exercise_type
+from app.services.error_pattern_engine import detect_known_error
 
-# Carrega as configurações do .env para não deixar nada hardcoded
+# Importação da nova Skill Exercise Engine (Fase 9)
+from app.services.skill_exercise_engine import get_skill_specific_exercise
+
 load_dotenv()
 
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234/v1/chat/completions")
 MODEL_NAME = os.getenv("LM_STUDIO_MODEL", "qwen2.5-7b-instruct")
 
 SYSTEM_INSTRUCTION = """
-You are an expert, highly strict English tutor AI for a mobile language learning app. Always return a single, valid JSON object matching the requested schema.
-CRITICAL: Never output any conversational text, greetings, markdown block ticks (like ```json), or explanations BEFORE or AFTER the JSON block.
+You are an expert, adaptive English tutor AI for a mobile language app. 
+CRITICAL: You MUST output ONLY a valid JSON object. No conversational filler, no markdown tags.
 
-CRITICAL CORRECTION AND GRADING RULES:
-1. Analyze the VERY LAST user message in the conversation history for any grammatical, syntax, spelling, or structure errors.
-2. Be extremely rigid! Casual spoken errors like "he don't" instead of "he doesn't", missing articles ("a", "an", "the"), or wrong prepositions MUST be caught.
-3. If the user's sentence contains any mistake:
-   - "correction": Provide the full, grammatically corrected sentence.
-   - "explanation_pt": Explain the specific mistake and state the rule clearly in Portuguese.
-   - "example": Provide a brand-new, clean example sentence demonstrating this correct rule.
-4. If and ONLY if the user's sentence is 100% grammatically perfect:
-   - You MUST return exactly: "correction": "Correct! ✨", "explanation_pt": "Sua frase está totalmente correta! Excelente trabalho. 🥳", and "example": "".
-5. Never rewrite an already correct sentence into a different style. If it is correct, accept it.
+=== CRITICAL LANGUAGE RULES ===
+- conversation_reply: ALWAYS English
+- correction: ALWAYS English
+- example: ALWAYS English
+- exercise: ALWAYS English
+- explanation_pt: ALWAYS Brazilian Portuguese
+Never mix languages. Never answer conversation_reply in Portuguese.
 
-EXERCISE FORMAT AUTHORITY:
-The exercise MUST exactly follow the selected format and MUST be an unsolved challenge. NEVER provide the answer inside the exercise string.
+=== PEDAGOGICAL CORE DIRECTION ===
+1. Look at the "ALLOWED TEACHING MODE" in the Dynamic Context. You MUST respect this limitation.
+2. If allowed to teach, use the SOCRATIC METHOD (Phase 6): When the user makes a mistake, do not just spoon-feed the answer immediately. Guide them, provide subtle hints, or ask them to find the correct form.
+3. CONVERSATION OVER DRILLS (Phase 3): Prioritize open-ended questions ("question") that match the active theme to stimulate spontaneous production, rather than just dry mechanical exercises.
 
-- multiple_choice: MUST contain answer options.
-  Valid: "Yesterday I _____ a new server. (a) buy (b) bought"
-  Invalid: "Yesterday I bought a new server."
+=== ENGINE 1: CONFIDENCE & CORRECTION (Phase 2) ===
+1. Analyze the grammar, syntax, and naturalness of the user's VERY LAST message.
+2. Rate your "grammar_confidence" from 0.0 to 1.0 (How certain are you that the sentence is correct and naturally used by native speakers?).
+3. NO OVER-CORRECTION: If the sentence is natural and valid (e.g., "I have been living here for 2 years"), set "grammar_confidence": 1.0 and "needs_correction": false.
+4. CONTRACTIONS ARE VALID: "I'm", "she's", "don't" are perfectly correct. NEVER correct them.
+5. If "needs_correction" is false:
+   - "correction": "Correct! ✨"
+   - "explanation_pt": "Sua frase está excelente! 🥳"
+   - "example": ""
 
-- fill_blank: MUST contain a blank space (_____) and NO options.
-  Valid: "Yesterday I _____ to the repository."
+=== ENGINE 2: EXERCISE ENGINE ===
+If the backend requested an exercise and the current action allows it:
+1. TARGET SKILL MANDATE: The exercise MUST test the requested "MANDATORY TARGET SKILL".
+2. THEME MANDATE: You MUST build the exercise scenario around the "Exercise Theme" (e.g., anime, travel).
 
-- verb_transformation: Provide a sentence in the present/base form and ask the user to transform the specific verb. NEVER give the verb already transformed.
-  Valid: "Change the verb to past tense: I (to deploy) the application yesterday."
-
-- sentence_reordering: Provide shuffled words separated by slashes.
-  Valid: "Reorder: yesterday / deployed / I / the / app"
-
-- sentence_correction: Provide an incorrect sentence and ask them to fix it.
-  Valid: "Correct the sentence: I code a new script yesterday."
-
-ADAPTIVE LEARNING & THEME RULES:
-- Focus the exercise and examples strictly on the requested "MANDATORY TARGET SKILL".
-- Adapt all language complexity to the user's English level.
-- Exercises MUST be contextually based on the "Exercise Theme". Do not create generic exercises.
-  * If Theme is anime: use anime characters/plots (e.g., Naruto, Luffy, Konoha).
-  * If Theme is technology: use software, AI, coding, servers, computers, or apps context. NEVER use anime characters or games here.
-- "conversation_reply" MUST NEVER BE EMPTY. Always write a natural, friendly response in English reacting directly to the user's message.
-
-Expected Output Format (Strict JSON):
-{{
+Expected JSON Schema  (Phase 4) (ALL FIELDS ARE MANDATORY):
+{
+  "grammar_confidence": float,
+  "needs_correction": boolean,
+  "teacher_action": "chat | question | exercise | correction",
   "correction": "string",
   "explanation_pt": "string",
   "example": "string",
   "exercise": "string",
   "conversation_reply": "string"
-}}
+}
+
+Never omit fields.
+Never return null.
+Always return all fields.
+
+COMMON LEARNER ERRORS:
+Treat these as mistakes:
+- "I talk English" -> "I speak English"
+- "He go to school" -> "He goes to school"
+- "I go yesterday" -> "I went yesterday"
+- "I bought computer" -> "I bought a computer"
+- "She don't like anime" -> "She doesn't like anime"
+
+Be strict with common ESL learner mistakes.
 """
 
+# ==========================================
+# VALIDATION ENGINE & GUARDRAILS
+# ==========================================
 
+
+def validate_correction(correction: str, needs_correction: bool) -> str:
+    """Filtra correções inválidas ou vazias geradas por preguiça do modelo."""
+    if not needs_correction:
+        return correction
+
+    invalid_feedbacks = [
+        "good try",
+        "you're close",
+        "you are close",
+        "almost",
+        "nice try",
+        "well done",
+        "great job",
+        "keep practicing",
+        "excellent",
+    ]
+
+    correction_lower = correction.lower()
+
+    for phrase in invalid_feedbacks:
+        if phrase in correction_lower:
+            return ""
+
+    return correction
+
+
+def _validate_multiple_choice(ex: str) -> bool:
+    return "_____" in ex and ("(a)" in ex or "a)" in ex)
+
+
+def _validate_fill_blank(ex: str) -> bool:
+    return "_____" in ex and not any(opt in ex for opt in ["(a)", "a)", "b)"])
+
+
+def _validate_verb_transformation(ex: str) -> bool:
+    ex_low = ex.lower()
+    return "(" in ex and ")" in ex and ("to " in ex_low or "verb" in ex_low)
+
+
+def _validate_sentence_reordering(ex: str) -> bool:
+    return "/" in ex and len(ex.split("/")) >= 3
+
+
+def _validate_sentence_correction(ex: str) -> bool:
+    return len(ex.split()) >= 3 and not "_____" in ex
+
+
+def validate_and_fix_exercise(
+    exercise: str, exercise_type: str, theme: str, target_skill: str
+) -> str:
+    """Guardrail do Backend com Validadores Granulares para o Modelo 7B."""
+    ex_clean = exercise.strip()
+    placeholders = ["word1", "word2", "[incorrect sentence]", "subject", "action"]
+
+    if any(p in ex_clean.lower() for p in placeholders) or not ex_clean:
+        print(
+            f"⚠️ [Guardrail] Placeholder detectado ou vazio. Gerando fallback completo."
+        )
+        return _generate_backend_fallback(exercise_type, theme, target_skill)
+
+    validators = {
+        "multiple_choice": _validate_multiple_choice,
+        "fill_blank": _validate_fill_blank,
+        "verb_transformation": _validate_verb_transformation,
+        "sentence_reordering": _validate_sentence_reordering,
+        "sentence_correction": _validate_sentence_correction,
+    }
+
+    validator_func = validators.get(exercise_type)
+
+    if validator_func and not validator_func(ex_clean):
+        print(
+            f"⚠️ [Guardrail] Falha estrutural no tipo '{exercise_type}'. Injetando fallback limpo."
+        )
+        return _generate_backend_fallback(exercise_type, theme, target_skill)
+
+    return ex_clean
+
+
+def _generate_backend_fallback(
+    exercise_type: str, theme: str, target_skill: str
+) -> str:
+    is_anime = theme.lower() == "anime"
+    subject = "Naruto" if is_anime else "He"
+    action_past = "watched an anime" if is_anime else "bought a laptop"
+    action_present = "watches anime" if is_anime else "studies English"
+
+    fallbacks = {
+        "multiple_choice": f"{subject} _____ {action_past} yesterday. (a) went (b) {'watched' if is_anime else 'bought'}",
+        "fill_blank": f"Fill the blank ({target_skill}): {subject} _____ {action_present} every single day.",
+        "sentence_reordering": f"Order the words about {theme}: {subject} / English / loves / studying"
+        if not is_anime
+        else "Naruto / become / wants / Hokage / to",
+        "sentence_correction": f"Correct the error: {subject} do not like {'anime' if is_anime else 'studying'}.",
+        "verb_transformation": f"Change the verb to {target_skill}: {subject} (to watch) a new episode last night."
+        if is_anime
+        else f"Change the verb to {target_skill}: {subject} (to buy) a computer yesterday.",
+    }
+    return fallbacks.get(
+        exercise_type,
+        f"Let's practice {target_skill}! Fill the blank: {subject} _____ happy. (is/are)",
+    )
+
+
+# ==========================================
+# PASSO 1 — Criar o Resolver (Juiz Final)
+# ==========================================
+def resolve_final_teacher_action(
+    response_json: dict,
+    known_error: dict | None,
+    allowed_mode: str,
+    backend_wants_teaching: bool,
+) -> str:
+    """
+    Juiz final do sistema pedagógico.
+    Somente esta função decide a ação final.
+    """
+    if known_error:
+        return "correction"
+
+    if response_json.get("needs_correction"):
+        return "correction"
+
+    if allowed_mode == "chat":
+        return "chat"
+
+    if backend_wants_teaching:
+        ai_action = response_json.get("teacher_action")
+        if ai_action == "exercise":
+            return "exercise"
+        return "question"
+
+    ai_action = response_json.get("teacher_action", "chat")
+    if ai_action in ["question", "exercise"]:
+        return ai_action
+
+    return "chat"
+
+
+# ==========================================
+# MAIN RESPONSE ENGINE
+# ==========================================
 def generate_response(messages: list, memory_data: dict) -> dict:
-    # 1️⃣ Extração e tratamento seguro de dados da memória
-    english_level = memory_data.get("english_level", "A2")
+    conversation_turns = memory_data.get("conversation_turns", 0)
+    messages_since_last_teaching = memory_data.get("messages_since_last_teaching", 5)
 
+    english_level = memory_data.get("english_level", "A2")
     favorite_topics = memory_data.get("favorite_topics", {})
-    if not isinstance(favorite_topics, dict):
-        favorite_topics = {}
-    top_topics = get_top_topics(favorite_topics)
-    theme = top_topics[0] if top_topics else "general"
+
+    top_topics = get_top_topics(
+        favorite_topics if isinstance(favorite_topics, dict) else {}
+    )
+    theme = top_topics[0].lower() if top_topics else "technology"
 
     weak_skills = memory_data.get("weak_skills", {})
-    if not isinstance(weak_skills, dict):
-        weak_skills = {}
-    top_weak_skills = get_top_errors(weak_skills)
-
+    top_weak_skills = get_top_errors(
+        weak_skills if isinstance(weak_skills, dict) else {}
+    )
     top_errors = get_top_errors(memory_data.get("common_errors", {}))
+
     exercise_focus = (
         top_weak_skills[0]
         if top_weak_skills
         else (top_errors[0] if top_errors else "past_tense")
     )
-
     exercise_type = choose_exercise_type(memory_data)
-    exercise_required = len(weak_skills) > 0 or should_generate_exercise(memory_data)
 
-    # 2️⃣ Geração inteligente e dinâmica de templates com base no TEMA real
-    exercise_example = ""
-    if theme == "technology":
-        templates = {
-            "multiple_choice": "Yesterday I _____ the code. (a) push (b) pushed",
-            "fill_blank": "Yesterday the server _____ down unexpectedly.",
-            "sentence_reordering": "Reorder: yesterday / deployed / I / the / app",
-            "sentence_correction": "Correct the sentence: I code a new script yesterday.",
-            "verb_transformation": "Change the verb to past tense: Python (to update) its libraries yesterday.",
-        }
-        exercise_example = templates.get(exercise_type, "")
+    weakness_score = weak_skills.get(exercise_focus, 0)
+
+    if weakness_score >= 20:
+        teaching_probability = 0.90
+    elif weakness_score >= 10:
+        teaching_probability = 0.70
+    elif weakness_score >= 5:
+        teaching_probability = 0.50
     else:
-        # Fallback padrão / Tema de Anime (Naruto)
-        templates = {
-            "multiple_choice": "Yesterday Naruto _____ to Konoha. (a) go (b) went",
-            "fill_blank": "Yesterday Naruto _____ to Konoha.",
-            "sentence_reordering": "Reorder: yesterday / Naruto / went / Konoha / to",
-            "sentence_correction": "Correct the sentence: Naruto go to Konoha yesterday.",
-            "verb_transformation": "Change the verb to past tense: Naruto (to go) to Konoha yesterday.",
-        }
-        exercise_example = templates.get(exercise_type, "")
+        teaching_probability = 0.20
 
-    learning_profile = (
-        f"casual learner interested in {', '.join(top_topics)}"
-        if top_topics
-        else "general English learner"
+    hit_teaching_chance = random.random() < teaching_probability
+
+    if messages_since_last_teaching < 2 and weakness_score < 10:
+        allowed_mode = "chat"
+    else:
+        if hit_teaching_chance:
+            allowed_mode = "full" if len(weak_skills) > 0 else "light"
+        elif conversation_turns % 5 == 0 and conversation_turns > 0:
+            allowed_mode = "light"
+        else:
+            allowed_mode = "chat"
+
+    exercise_required = (
+        len(weak_skills) > 0 or should_generate_exercise("", memory_data)
+    ) and allowed_mode in ["light", "full"]
+
+    backend_wants_teaching = allowed_mode == "full" and weakness_score >= 10
+
+    print("\n=== DEBUG PEDAGOGICAL BACKEND ===")
+    print(
+        f"TURNS:            {conversation_turns} | SINCE LAST TEACHING: {messages_since_last_teaching}"
     )
+    print(
+        f"TEACH PROBABILITY: {teaching_probability * 100}% | CHANCE HIT: {hit_teaching_chance}"
+    )
+    print(
+        f"ROUTED MODE:      {allowed_mode.upper()} | SCORE DE FRAQUEZA: {weakness_score}"
+    )
+    print(f"TARGET SKILL:     {exercise_focus}")
+    print(f"EXERCISE REQUIRED:{exercise_required}")
+    print(f"BACKEND WANTS TEACHING: {backend_wants_teaching}")
+    print("=================================\n")
 
-    # 🔥 Mapeamento visual limpo para debug no console do backend
-    print("\n=== DEBUG BACKEND DATA ===")
-    print(f"LEVEL:         {english_level}")
-    print(f"EXERCISE TYPE: {exercise_type}")
-    print(f"THEME:         {theme}")
-    print(f"TARGET SKILL:  {exercise_focus}")
-    print(f"WEAK SKILLS:   {weak_skills}")
-    print("==========================\n")
-
-    # 3️⃣ Construção do bloco de contexto dinâmico (Injetado no Sistema)
     memory_context = f"""
 ### DYNAMIC USER CONTEXT ###
-English Level: {english_level}
+ALLOWED TEACHING MODE FOR THIS TURN: {allowed_mode} (Strictly obey this directive!)
+MANDATORY TARGET SKILL TO TRAIN: {exercise_focus}
 Exercise Format Required: {exercise_type}
-MANDATORY EXERCISE FORMAT TEMPLATE: {exercise_example}
-Learning Classification: {learning_profile}
-Exercise Required Right Now: {"YES" if exercise_required else "NO"}
-
-MANDATORY TARGET SKILL: {exercise_focus}
-Weak Skills List: {", ".join(top_weak_skills) if top_weak_skills else "None"}
-Most Frequent Mistakes: {", ".join(top_errors) if top_errors else "None"}
-
 Exercise Theme: {theme}
-Favorite Topics: {", ".join(top_topics) if top_topics else "None"}
+User English Level: {english_level}
 Conversation Style: {memory_data.get("conversation_style", "casual")}
+Exercise Required Right Now: {"YES" if exercise_required else "NO"}
 """
 
-    dynamic_system_instruction = (
-        SYSTEM_INSTRUCTION.strip() + "\n" + memory_context.strip()
-    )
-
     full_messages = [
-        {"role": "system", "content": dynamic_system_instruction}
+        {
+            "role": "system",
+            "content": SYSTEM_INSTRUCTION.strip() + "\n" + memory_context.strip(),
+        }
     ] + messages
 
     payload = {
@@ -159,87 +314,232 @@ Conversation Style: {memory_data.get("conversation_style", "casual")}
         "messages": full_messages,
         "temperature": 0.2,
         "max_tokens": 600,
-        #"response_format": {
-         #   "type": "json_object"
-       # },  # Força o Qwen 2.5 a responder em modo JSON nativo
     }
 
-    # 4️⃣ Envio da Requisição com medição de performance
     try:
         print("=== SENDING TO LM STUDIO ===")
         start_time = time.time()
         response = requests.post(LM_STUDIO_URL, json=payload, timeout=45)
+        response.raise_for_status()
+        print(f"LM STUDIO RESPONSE TIME: {time.time() - start_time:.2f}s")
 
-        if response.status_code != 200:
-            return {
-                "error": f"LM Studio error status: {response.status_code}",
-                "raw": response.text,
-            }
+        raw_text = response.json()["choices"][0]["message"]["content"].strip()
 
-        elapsed = time.time() - start_time
-        print(f"LM STUDIO RESPONSE TIME: {elapsed:.2f}s")
-        result = response.json()
+        cleaned_text = raw_text.replace(",}", "}").replace(",]", "]")
+        if cleaned_text != raw_text:
+            print("⚠️ JSON AUTO-REPAIRED")
+        raw_text = cleaned_text
 
     except Exception as e:
-        return {"error": f"Request failed: {str(e)}"}
+        print(f"❌ Erro de requisição no LM Studio: {str(e)}")
+        return _disaster_recovery_json()
 
-    if not result or "choices" not in result:
-        return {"error": "Invalid response structure from LM Studio", "raw": result}
-
-    raw_text = result["choices"][0]["message"]["content"].strip()
-
-    # 5️⃣ Extrator Regex Não-Guloso Avançado + Sanetização de Markdown
-    # Remove cercas de código geradas acidentalmente antes de aplicar o regex
-    clean_text = raw_text.replace("```json", "").replace("```", "").strip()
-
-    json_match = re.search(r"(\{.*?\})", clean_text, re.DOTALL)
-    if json_match:
-        clean_text = json_match.group(1)
-
-    # 6️⃣ Validação e Normalização do Dicionário de Saída
     try:
-        response_json = json.loads(clean_text)
+        response_json = json.loads(raw_text)
 
-        # Garante fallbacks para chaves vazias ou ausentes
-        if not response_json.get("conversation_reply"):
-            response_json["conversation_reply"] = (
-                "That's interesting! Let's keep practicing."
-            )
+        known_error = detect_known_error(messages[-1]["content"])
+        print(f"KNOWN ERROR RESULT: {known_error}")
 
-        # Se a IA pulou a correção mas ela era necessária, ou se veio vazia por acerto:
-        if not response_json.get("correction"):
+        if known_error:
+            print(f"🎯 ERROR PATTERN DETECTED -> {known_error['skill']}")
+            response_json["needs_correction"] = True
+            response_json["correction"] = known_error["correction"]
+            response_json["explanation_pt"] = known_error["explanation"]
+
+        VALID_ACTIONS = ["chat", "question", "exercise", "correction"]
+        teacher_action = response_json.get("teacher_action", "chat")
+        if teacher_action not in VALID_ACTIONS:
+            print(f"⚠️ INVALID TEACHER ACTION DETECTED: {teacher_action}")
+            teacher_action = "chat"
+            response_json["teacher_action"] = "chat"
+
+        confidence = response_json.get("grammar_confidence", 1.0)
+        needs_correction = response_json.get("needs_correction", False)
+
+        print("\n=== AI ORIGINAL DECISION ===")
+        print(f"ACTION: {teacher_action} | CONFIDENCE: {confidence}")
+        print("============================\n")
+
+        # 🎯 SEU NOVO TRECHO INSERIDO COM SUCESSO AQUI:
+        # Guardrail de Correção
+        original_correction = response_json.get("correction", "")
+
+        response_json["correction"] = validate_correction(
+            original_correction, needs_correction
+        )
+
+        validated_correction = response_json.get("correction", "")
+
+        if is_invalid_correction(validated_correction):
+            print("⚠️ INVALID CORRECTION FORMAT DETECTED")
+            response_json["correction"] = ""
+        # --------------------------------------------------
+
+        if response_json.get("needs_correction") and not response_json.get(
+            "correction"
+        ):
+            if response_json.get("example"):
+                response_json["correction"] = response_json["example"]
+
+        BAD_CORRECTIONS = [
+            "you're close",
+            "good try",
+            "small mistake",
+            "change",
+            "past tense",
+            "try again",
+            "almost",
+        ]
+        correction_lower = response_json.get("correction", "").lower()
+        if any(bad in correction_lower for bad in BAD_CORRECTIONS):
+            print("⚠️ INVALID CORRECTION DETECTED")
+            response_json["correction"] = ""
+
+        user_msg_clean = messages[-1]["content"].strip().lower() if messages else ""
+        SPECIAL_CORRECTIONS = {
+            "talk english": "I speak English.",
+            "talk english with": "I speak English.",
+            "talk english at": "I speak English.",
+        }
+        for trigger, fixed_form in SPECIAL_CORRECTIONS.items():
+            if trigger in user_msg_clean:
+                print(f"🎯 SPECIAL CORRECTION TRIGGERED FOR SUBSTRING: '{trigger}'")
+                response_json["needs_correction"] = True
+                response_json["correction"] = fixed_form
+                break
+
+        SPECIAL_EXPLANATIONS = {
+            "talk english": "Em inglês usamos 'speak English', não 'talk English'.",
+            "she don't": "Na terceira pessoa usamos 'doesn't', não 'don't'.",
+            "go yesterday": "Após marcadores de passado como 'yesterday', usamos o verbo no passado.",
+        }
+        for trigger, explanation in SPECIAL_EXPLANATIONS.items():
+            if trigger in user_msg_clean:
+                response_json["explanation_pt"] = explanation
+                print(f"🎯 SPECIAL EXPLANATION TRIGGERED FOR SUBSTRING: '{trigger}'")
+                break
+
+        confidence = response_json.get("grammar_confidence", 1.0)
+        needs_correction = response_json.get("needs_correction", False)
+
+        if confidence > 0.95 and not needs_correction:
+            response_json["needs_correction"] = False
             response_json["correction"] = "Correct! ✨"
             response_json["explanation_pt"] = (
                 "Sua frase está totalmente correta! Excelente trabalho. 🥳"
             )
             response_json["example"] = ""
 
-        elif response_json.get("correction") and not response_json.get(
-            "explanation_pt"
+        if (
+            not response_json.get("conversation_reply")
+            or "keep practicing" in response_json.get("conversation_reply").lower()
         ):
-            response_json["explanation_pt"] = (
-                "Observe a estrutura acima para compreender a correção."
+            if theme == "anime":
+                response_json["conversation_reply"] = (
+                    "That's awesome! By the way, who is your favorite anime character?"
+                )
+            else:
+                response_json["conversation_reply"] = (
+                    "That sounds cool! Tell me more about that."
+                )
+
+        final_action = resolve_final_teacher_action(
+            response_json=response_json,
+            known_error=known_error,
+            allowed_mode=allowed_mode,
+            backend_wants_teaching=backend_wants_teaching,
+        )
+        response_json["teacher_action"] = final_action
+
+        print("\n=== FINAL BACKEND DECISION ===")
+        print(f"FINAL ACTION DETERMINED: {final_action}")
+        print("==============================\n")
+
+        if final_action == "chat":
+            response_json["exercise"] = ""
+
+        elif final_action == "correction":
+            response_json["exercise"] = ""
+
+        elif final_action == "exercise":
+            raw_exercise = response_json.get("exercise", "")
+            response_json["exercise"] = validate_and_fix_exercise(
+                raw_exercise,
+                exercise_type,
+                theme,
+                exercise_focus,
             )
 
-        # Controla se o exercício deve ou não ser exibido ao usuário final
-        if not exercise_required:
-            response_json["exercise"] = ""
-        else:
-            exercise = response_json.get("exercise", "")
-            if not isinstance(exercise, str) or exercise.strip() == "":
-                response_json["exercise"] = f"Let's practice! {exercise_example}"
+        elif final_action == "question":
+            current_exercise = response_json.get("exercise", "")
+
+            if backend_wants_teaching and exercise_required:
+                current_exercise = validate_and_fix_exercise(
+                    current_exercise,
+                    exercise_type,
+                    theme,
+                    exercise_focus,
+                )
+
+                response_json["exercise"] = current_exercise
+                print(
+                    f"🎯 SKILL EXERCISE ENGINE ACTIVATED FOR QUESTION -> {exercise_focus}"
+                )
+                response_json["exercise"] = get_skill_specific_exercise(
+                    exercise_focus, exercise_type
+                )
+                print(f"🎯 EXERCISE GENERATED: {response_json['exercise']}")
+
+        print("\n=== AI SUMMARY DECISION ===")
+        print(f"ACTION: {response_json.get('teacher_action')}")
+        print(f"CORRECTION: {response_json.get('needs_correction')}")
+        print(f"CONFIDENCE: {response_json.get('grammar_confidence')}")
+        print("===================\n")
 
         return response_json
 
     except json.JSONDecodeError:
-        # Recuperação graciosa de desastre (Garante que a conversa no Flutter não trave)
         print(f"❌ Erro Crítico de Parse no JSON. Texto Bruto: {raw_text}")
-        return {
-            "correction": "Correct! ✨",
-            "explanation_pt": "Análise gramatical indisponível para esta mensagem.",
-            "example": "",
-            "exercise": "",
-            "conversation_reply": raw_text
-            if len(raw_text) < 150
-            else "I understood you perfectly! Let's continue chatting.",
-        }
+        return _disaster_recovery_json()
+    except Exception as e:
+        print(f"❌ Erro inesperado: {str(e)}")
+        return _disaster_recovery_json()
+
+
+def _disaster_recovery_json() -> dict:
+    return {
+        "grammar_confidence": 0.0,
+        "needs_correction": False,
+        "teacher_action": "chat",
+        "correction": "Correct! ✨",
+        "explanation_pt": "Análise gramatical momentaneamente offline, mas prossiga!",
+        "example": "",
+        "exercise": "",
+        "conversation_reply": "I'm having a little technical hiccup, but I'm still here! What are you up to today?",
+    }
+
+
+def is_invalid_correction(correction: str) -> bool:
+    if not correction:
+        return True
+
+    correction = correction.lower().strip()
+
+    bad_starts = [
+        "you need",
+        "you should",
+        "try to",
+        "remember to",
+        "don't forget",
+        "change",
+        "add",
+        "remove",
+        "use",
+        "put",
+        "insert",
+        "the correct sentence is",
+        "the correct form is",
+        "the sentence should be",
+    ]
+
+    return any(correction.startswith(prefix) for prefix in bad_starts)

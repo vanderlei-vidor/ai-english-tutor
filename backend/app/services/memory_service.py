@@ -21,6 +21,9 @@ def get_user_memory(db: Session, user_id: str):
                 "recent_exercise_types": [],
                 "conversation_style": "casual",
                 "total_conversations": 0,
+                # 🔥 NOVOS CAMPOS PEDAGÓGICOS
+                "conversation_turns": 0,
+                "messages_since_last_teaching": 5,
             },
         )
         db.add(memory)
@@ -31,7 +34,12 @@ def get_user_memory(db: Session, user_id: str):
 
 
 def update_memory_from_message(
-    db: Session, user_id: str, user_message: str, correction: str, exercise: str
+    db: Session,
+    user_id: str,
+    user_message: str,
+    correction: str,
+    exercise: str,
+    teacher_action: str = "chat",
 ):
     memory = get_user_memory(db, user_id)
 
@@ -62,6 +70,9 @@ def update_memory_from_message(
     # 🔥 TOTAL CONVERSATIONS
     data["total_conversations"] = data.get("total_conversations", 0) + 1
 
+    # 🔥 PEDAGOGICAL COUNTERS
+    data["conversation_turns"] = ( data.get("conversation_turns", 0) + 1)
+
     # 🔥 DETECT ENGLISH LEVEL
     detected_level = detect_english_level(user_message)
     levels = {"A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6}
@@ -89,6 +100,23 @@ def update_memory_from_message(
     # 🔥 DETECT ARTICLES
     if "article" in correction.lower():
         data["common_errors"]["articles"] = data["common_errors"].get("articles", 0) + 1
+
+    # 🔥 TEACHING INTERVAL ENGINE
+
+    if teacher_action in [
+    "exercise",
+    "correction",
+    "question"
+    ]:
+        data["messages_since_last_teaching"] = 0
+
+    else:
+        data["messages_since_last_teaching"] = (
+            data.get(
+                "messages_since_last_teaching",
+            0
+        ) + 1
+    )
 
     # ⚡ SALVAMENTO BLINDADO: Atualiza o dicionário
     memory.data = data
