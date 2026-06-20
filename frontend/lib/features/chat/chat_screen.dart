@@ -52,19 +52,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   late FlutterTts _tts;
 
   bool isListening = false;
-  String voiceState = "idle";
+  
+  // 🔥 CORREÇÃO: Variável agora tipada estritamente como o Enum do seu Widget
+  VoiceOrbState voiceState = VoiceOrbState.idle;
 
   final ScrollController _scrollController = ScrollController();
 
   double soundLevel = 0;
-
   bool isThinking = false;
-
   String streamingText = "";
-
   bool isStreaming = false;
-
   double aiSoundLevel = 0;
+  int thinkingDots = 1;
 
   @override
   void initState() {
@@ -166,7 +165,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
         setState(() {
           isListening = false;
-          voiceState = "idle";
+          voiceState = VoiceOrbState.idle; // 🔥 Atualizado para Enum
         });
       },
     );
@@ -176,18 +175,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (available) {
       setState(() {
         isListening = true;
+        voiceState = VoiceOrbState.listening; // 🔥 Atualizado para Enum
       });
-      setState(() {
-        voiceState = "listening";
-      });
-
-      //var locales = await _speech.locales();
-
-     // print("========== LOCALES ==========");
-
-    //  for (var locale in locales) {
-    //    print("${locale.localeId} -> ${locale.name}");
-    //  }
 
       await _speech.listen(
         localeId: "en_US",
@@ -211,7 +200,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        // Pequeno delay para garantir que o ListView calculou o tamanho da animação
         Future.delayed(const Duration(milliseconds: 100), () {
           if (_scrollController.hasClients) {
             _scrollController.animateTo(
@@ -236,14 +224,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     setState(() {
       isListening = false;
-      voiceState = "idle";
+      voiceState = VoiceOrbState.idle; // 🔥 Atualizado para Enum
     });
   }
 
   Future<void> initTts() async {
     _tts = FlutterTts();
 
-    // Configurações de áudio para garantir que saia no alto-falante
     await _tts.setIosAudioCategory(IosTextToSpeechAudioCategory.playback, [
       IosTextToSpeechAudioCategoryOptions.allowBluetooth,
       IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
@@ -253,16 +240,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     await _tts.setLanguage("en-US");
     await _tts.setSpeechRate(0.45);
     await _tts.setPitch(1.0);
-    await _tts.setVolume(1.0); // Garante volume no máximo do app
+    await _tts.setVolume(1.0);
 
-    // O pulo do gato: desative o awaitSpeakCompletion para teste
     await _tts.awaitSpeakCompletion(true);
 
     _tts.setCompletionHandler(() async {
       if (!mounted) return;
 
       setState(() {
-        voiceState = "idle";
+        voiceState = VoiceOrbState.idle; // 🔥 Atualizado para Enum
       });
 
       if (voiceModeEnabled) {
@@ -274,10 +260,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
     });
 
-    // Handler de erro para você ver no console se algo falhar
     _tts.setErrorHandler((msg) {
       print("Erro no TTS: $msg");
-      setState(() => voiceState = "idle");
+      setState(() => voiceState = VoiceOrbState.idle); // 🔥 Atualizado para Enum
     });
   }
 
@@ -288,7 +273,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     setState(() {
       messages.add({"sender": "user", "text": userText});
       isThinking = true;
-      voiceState = "thinking";
+      voiceState = VoiceOrbState.thinking; // 🔥 Atualizado para Enum
     });
 
     _scrollToBottom();
@@ -296,7 +281,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     try {
       final result = await ApiClient.post("/chat", {
-        "user_id": "334dbf71-efc6-431c-8d0a-86d9ae8109a1",
+        "user_id": "caefaafb-93ac-4c33-9e79-aad08d3f808c",
         "message": userText,
       });
 
@@ -309,11 +294,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
       setState(() {
         isThinking = false;
-        // showFeedback = false;
-        voiceState = "speaking";
+        voiceState = VoiceOrbState.speaking; // 🔥 Atualizado para Enum
       });
 
-      // 🔥 CORREÇÃO: Chame o streamResponse APENAS UMA VEZ aqui
       await streamResponse(aiReply);
 
       setState(() {
@@ -321,33 +304,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           "sender": "ai",
           "text": aiReply,
           "showFeedback": false,
-          "teacherAction":
-              result["ai_response"]["teacher_action"] ?? "chat",
+          "teacherAction": result["ai_response"]["teacher_action"] ?? "chat",
           "correction": result["ai_response"]["correction"] ?? "",
           "explanation": result["ai_response"]["explanation_pt"] ?? "",
           "example": result["ai_response"]["example"] ?? "",
           "exercise": result["ai_response"]["exercise"] ?? "",
         });
 
-        // 🔥 PROTEÇÃO TOTAL CONTRA ERRO DE INT/DOUBLE
-        earnedXp =
-            int.tryParse(result["xp"]?["earned"]?.toString() ?? "0") ?? 0;
+        earnedXp = int.tryParse(result["xp"]?["earned"]?.toString() ?? "0") ?? 0;
         totalXp = int.tryParse(result["xp"]?["total"]?.toString() ?? "0") ?? 0;
 
-        // Use .toInt() para converter o valor, em vez de "as int"
-        progressPercent =
-            (double.tryParse(
-                      result["xp"]?["level"]?["progress_percentage"]
-                              ?.toString() ??
-                          "0",
-                    ) ??
-                    0.0)
-                .toInt();
+        progressPercent = (double.tryParse(
+                  result["xp"]?["level"]?["progress_percentage"]?.toString() ?? "0",
+                ) ?? 0.0).toInt();
 
         league = result["xp"]?["level"]?["name"] ?? "Bronze";
       });
 
-      // Feedback visual/sonoro após o streaming
       Future.delayed(const Duration(milliseconds: 500), () async {
         if (!mounted) return;
 
@@ -356,8 +329,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         });
 
         await Future.delayed(const Duration(milliseconds: 50));
-
-        // 🔥 SCROLL DO FEEDBACK
         _scrollToBottom();
 
         if ((result["ai_response"]["correction"] ?? "").isNotEmpty) {
@@ -367,7 +338,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
-      // --- Lógica do TTS ---
       String textToSpeak = aiReply.replaceAll(RegExp(r'[*_#]'), '');
       await _tts.stop();
       await _tts.setLanguage("en-US");
@@ -377,7 +347,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         await _tts.speak(textToSpeak);
       }
 
-      // --- Gamificação ---
       if (earnedXp > 0) {
         setState(() => showXp = true);
         _xpController.forward(from: 0);
@@ -406,11 +375,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       print("Erro no envio: $e");
       setState(() {
         isThinking = false;
-        voiceState = "idle";
+        voiceState = VoiceOrbState.idle; // 🔥 Atualizado para Enum
         messages.add({
           "sender": "ai",
-          "text":
-              "Sorry, I'm having trouble connecting. Please check your internet. 📡",
+          "text": "Sorry, I'm having trouble connecting. Please check your internet. 📡",
         });
       });
     }
@@ -419,11 +387,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget buildMessage(Map<String, dynamic> message) {
     final isUser = message["sender"] == "user";
 
-    // O TweenAnimationBuilder envolve todo o conteúdo para animar a entrada
     return TweenAnimationBuilder(
-      duration: const Duration(
-        milliseconds: 600,
-      ), // Um pouco mais lento fica mais elegante
+      duration: const Duration(milliseconds: 600),
       tween: Tween<double>(begin: 0, end: 1),
       curve: Curves.easeOutCubic,
       builder: (context, double value, child) {
@@ -432,12 +397,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           child: Transform.translate(
             offset: Offset(
               isUser ? 40 * (1 - value) : -40 * (1 - value),
-
               20 * (1 - value),
             ),
             child: Transform.scale(
               scale: 0.96 + (value * 0.04),
-              // Desliza 30 pixels para cima
               child: child,
             ),
           ),
@@ -446,11 +409,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       child: Align(
         alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
         child: Column(
-          crossAxisAlignment: isUser
-              ? CrossAxisAlignment.end
-              : CrossAxisAlignment.start,
+          crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
-            // 💬 BOLHA CHAT COM GLASSMORPHISM
             Container(
               margin: const EdgeInsets.symmetric(vertical: 6),
               constraints: const BoxConstraints(maxWidth: 280),
@@ -466,20 +426,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-
                         colors: isUser
                             ? [
                                 Colors.cyanAccent.withOpacity(0.22),
-
                                 Colors.blueAccent.withOpacity(0.12),
-
                                 Colors.white.withOpacity(0.03),
                               ]
                             : [
                                 Colors.deepPurpleAccent.withOpacity(0.18),
-
                                 Colors.purpleAccent.withOpacity(0.08),
-
                                 Colors.white.withOpacity(0.03),
                               ],
                       ),
@@ -492,15 +447,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           color: isUser
                               ? Colors.cyanAccent.withOpacity(0.16)
                               : Colors.deepPurpleAccent.withOpacity(0.18),
-
                           blurRadius: 28,
                           spreadRadius: 2,
                           offset: const Offset(0, 10),
                         ),
-
                         BoxShadow(
                           color: Colors.black.withOpacity(0.25),
-
                           blurRadius: 25,
                           offset: const Offset(0, 12),
                         ),
@@ -508,44 +460,32 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     ),
                     child: Stack(
                       children: [
-                        // 🌌 INNER LIGHT
                         Positioned(
                           top: 0,
                           left: 0,
                           right: 0,
-
                           child: Container(
                             height: 16,
-
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.only(
+                              borderRadius: const BorderRadius.only(
                                 topLeft: Radius.circular(22),
                                 topRight: Radius.circular(22),
                               ),
-
                               gradient: LinearGradient(
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
-
                                 colors: [
                                   Colors.white.withOpacity(0.035),
-
                                   Colors.transparent,
                                 ],
                               ),
                             ),
                           ),
                         ),
-
-                        // 💬 MESSAGE TEXT
                         Text(
                           message["text"] ?? "",
-
                           style: TextStyle(
-                            color: isUser
-                                ? Colors.white
-                                : Colors.white.withOpacity(0.9),
-
+                            color: isUser ? Colors.white : Colors.white.withOpacity(0.9),
                             fontSize: 15,
                             height: 1.4,
                             letterSpacing: 0.3,
@@ -557,8 +497,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-
-            // ✨ FEEDBACK CARD
             if (!isUser) buildFeedbackCard(message),
           ],
         ),
@@ -567,130 +505,99 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget buildFeedbackCard(Map<String, dynamic> message) {
-  // 1. Valida primeiro se o feedback já foi liberado para exibição
-  if (!(message["showFeedback"] ?? false)) {
-    return const SizedBox();
-  }
+    if (!(message["showFeedback"] ?? false)) {
+      return const SizedBox();
+    }
 
-  final correction = message["correction"] ?? "";
-  final explanation = message["explanation"] ?? "";
-  final exercise = message["exercise"] ?? "";
+    final correction = message["correction"] ?? "";
+    final explanation = message["explanation"] ?? "";
+    final exercise = message["exercise"] ?? "";
 
-  // Se tudo estiver completamente vazio (sem resposta da IA), não renderiza nada
-  if (correction.isEmpty && explanation.isEmpty && exercise.isEmpty) {
-    return const SizedBox();
-  }
+    if (correction.isEmpty && explanation.isEmpty && exercise.isEmpty) {
+      return const SizedBox();
+    }
 
-  // 2. Define qual card principal exibir com base nas suas novas regras de negócio
-  final teacherAction =
-    message["teacherAction"] ?? "chat";
+    final teacherAction = message["teacherAction"] ?? "chat";
+    Widget primaryCard;
 
-  Widget primaryCard;
+    switch (teacherAction) {
+      case "correction":
+        primaryCard = CorrectionFeedbackCard(
+          correction: correction,
+          explanation: explanation,
+          example: message["example"] ?? "",
+        );
+        break;
+      case "question":
+        primaryCard = TeacherQuestionCard(
+          question: message["text"] ?? "",
+        );
+        break;
+      case "exercise":
+        primaryCard = ExerciseCard(
+          exercise: exercise,
+        );
+        break;
+      case "chat":
+      default:
+        primaryCard = const SuccessFeedbackCard();
+        break;
+    }
 
-  switch (teacherAction) {
-
-    case "correction":
-
-      primaryCard = CorrectionFeedbackCard(
-        correction: correction,
-        explanation: explanation,
-        example: message["example"] ?? "",
-      );
-      break;
-
-    case "question":
-
-      primaryCard = TeacherQuestionCard(
-        question: message["text"] ?? "",
-      );
-      break;
-
-    case "exercise":
-
-      primaryCard = ExerciseCard(
-        exercise: exercise,
-      );
-      break;
-
-    case "chat":
-
-    default:
-
-      primaryCard = const SuccessFeedbackCard();
-      break;
-  }
-
-  // 3. Retorna a sua animação idêntica, mas agora animando a Column inteira
-  return TweenAnimationBuilder(
-    duration: const Duration(milliseconds: 1200),
-    tween: Tween<double>(begin: 0, end: 1),
-    curve: Curves.easeOutExpo,
-    builder: (context, double value, child) {
-      return Opacity(
-        opacity: value,
-        child: Transform.translate(
-          offset: Offset(0, 40 * (1 - value)), // Sobe de 40 para 0
-          child: Transform.scale(
-            scale: 0.92 + (value * 0.08), // Aumenta de 0.92 para 1.0
-            child: child,
+    return TweenAnimationBuilder(
+      duration: const Duration(milliseconds: 1200),
+      tween: Tween<double>(begin: 0, end: 1),
+      curve: Curves.easeOutExpo,
+      builder: (context, double value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 40 * (1 - value)),
+            child: Transform.scale(
+              scale: 0.92 + (value * 0.08),
+              child: child,
+            ),
           ),
-        ),
-      );
-    },
-    // 🔥 A mágica acontece aqui: passamos a Column contendo a combinação dos novos widgets
-    child: primaryCard,
-  );
-}
-
-  int thinkingDots = 1;
+        );
+      },
+      child: primaryCard,
+    );
+  }
 
   Widget buildThinkingIndicator() {
     return Align(
       alignment: Alignment.centerLeft,
-
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 8),
-
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-
           gradient: LinearGradient(
             colors: [
               Colors.deepPurpleAccent.withOpacity(0.22),
               Colors.blueGrey.withOpacity(0.12),
             ],
           ),
-
           border: Border.all(color: Colors.white.withOpacity(0.1)),
         ),
-
         child: Row(
           mainAxisSize: MainAxisSize.min,
-
           children: [
             const Text(
               "AI is thinking",
               style: TextStyle(color: Colors.white70),
             ),
-
             const SizedBox(width: 12),
-
             SizedBox(
               width: 40,
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 250),
-
                 transitionBuilder: (child, animation) {
                   return FadeTransition(opacity: animation, child: child);
                 },
-
                 child: Text(
                   "." * thinkingDots,
-
                   key: ValueKey(thinkingDots),
-
                   style: const TextStyle(color: Colors.white, fontSize: 22),
                 ),
               ),
@@ -704,39 +611,29 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget buildStreamingMessage() {
     return Align(
       alignment: Alignment.centerLeft,
-
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 6),
-
         padding: const EdgeInsets.all(14),
-
         constraints: const BoxConstraints(maxWidth: 280),
-
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(22),
-
           gradient: LinearGradient(
             colors: [
               Colors.deepPurpleAccent.withOpacity(0.22),
               Colors.blueGrey.withOpacity(0.15),
             ],
           ),
-
           border: Border.all(color: Colors.white.withOpacity(0.1)),
-
           boxShadow: [
             BoxShadow(
               color: Colors.deepPurpleAccent.withOpacity(0.18),
-
               blurRadius: 18,
               offset: const Offset(0, 8),
             ),
           ],
         ),
-
         child: Text(
           streamingText,
-
           style: const TextStyle(color: Colors.white, fontSize: 15),
         ),
       ),
@@ -763,12 +660,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       ),
       body: Stack(
         children: [
-          // 🌌 CAMADA 0: O FUNDO DE ESTRELAS/PARTÍCULAS
           const Positioned.fill(child: StarfieldBackground()),
-
           Column(
             children: [
-              // 🔥 HEADER PREMIUM
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: const BoxDecoration(color: Color(0xFF0F172A)),
@@ -788,18 +682,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 10),
-
                     LinearProgressIndicator(
                       value: progressPercent / 100,
                       backgroundColor: Colors.grey.shade800,
                       color: Colors.greenAccent,
                       minHeight: 8,
                     ),
-
                     const SizedBox(height: 6),
-
                     Text(
                       "Progresso: $progressPercent%",
                       style: const TextStyle(color: Colors.white70),
@@ -811,63 +701,44 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 18),
                   child: VoiceOrb(
-                    state: voiceState,
-                    soundLevel: voiceState == "speaking"
+                    state: voiceState, // 🔥 Agora passa o tipo perfeito!
+                    soundLevel: voiceState == VoiceOrbState.speaking // 🔥 Comparação atualizada para Enum
                         ? aiSoundLevel
                         : soundLevel,
                   ),
                 ),
               ),
-              // 💬 CHAT AREA
               Expanded(
                 child: ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
-                  itemCount:
-                      messages.length +
-                      (isThinking ? 1 : 0) +
-                      (isStreaming ? 1 : 0),
-                  physics:
-                      const BouncingScrollPhysics(), // Melhora a sensação de scroll
-
+                  itemCount: messages.length + (isThinking ? 1 : 0) + (isStreaming ? 1 : 0),
+                  physics: const BouncingScrollPhysics(),
                   itemBuilder: (context, index) {
                     if (index < messages.length) {
                       return buildMessage(messages[index]);
                     }
-
                     if (isThinking && index == messages.length) {
                       return buildThinkingIndicator();
                     }
-
                     if (isStreaming) {
                       return buildStreamingMessage();
                     }
-
                     return const SizedBox();
-
-                    return buildMessage(messages[index]);
                   },
                 ),
               ),
-
-              // ✍ INPUT
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.grey.shade900,
                   border: const Border(top: BorderSide(color: Colors.white12)),
                 ),
                 child: Row(
                   children: [
-                    // 🎤 MICROFONE
                     Container(
                       decoration: BoxDecoration(
-                        color: isListening
-                            ? Colors.redAccent
-                            : Colors.blueAccent,
+                        color: isListening ? Colors.redAccent : Colors.blueAccent,
                         shape: BoxShape.circle,
                       ),
                       child: IconButton(
@@ -884,10 +755,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         },
                       ),
                     ),
-
                     const SizedBox(width: 10),
-
-                    // ✍ INPUT
                     Expanded(
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -906,10 +774,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
-
                     const SizedBox(width: 10),
-
-                    // 🚀 BOTÃO ENVIAR
                     Container(
                       decoration: const BoxDecoration(
                         color: Colors.green,
@@ -925,7 +790,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
             ],
           ),
-
           Align(
             alignment: Alignment.topCenter,
             child: ConfettiWidget(
@@ -937,17 +801,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               minBlastForce: 8,
             ),
           ),
-
-          // 🎉 OVERLAY XP
           if (showXp)
             Center(
               child: ScaleTransition(
                 scale: _xpAnimation,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 40,
-                    vertical: 20,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.9),
                     borderRadius: BorderRadius.circular(20),
@@ -963,7 +822,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-
           if (showBadge)
             Center(
               child: Container(
@@ -1057,21 +915,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _setupAudioAndTts() async {
-    await initTts(); // Primeiro inicializa e configura os handlers
+    await initTts();
     await _tts.setLanguage("en-US");
     await _tts.setSpeechRate(0.45);
   }
 
   Future<void> streamResponse(String text) async {
     setState(() {
-      isThinking = false; // Garante que o loading pare
+      isThinking = false;
       isStreaming = true;
       streamingText = "";
     });
 
     final words = text.split(" ");
     for (final word in words) {
-      if (!mounted) return; // Segurança caso o usuário saia da tela
+      if (!mounted) return;
 
       setState(() {
         streamingText += "$word ";
@@ -1081,20 +939,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       int delay = 110;
 
       if (word.contains(".") || word.contains("!") || word.contains("?")) {
-        delay = 320;
-      } else if (word.contains(",")) {
-        delay = 180;
+        delay = 400; // Um pequeno respiro nas pontuações
       }
-
+      
       await Future.delayed(Duration(milliseconds: delay));
-      _scrollStreaming();
     }
 
-    // Não resetamos o isStreaming aqui imediatamente para evitar o "flicker" (piscada)
-    // Deixamos o sendMessage cuidar da transição final.
     setState(() {
       isStreaming = false;
     });
-    aiSoundLevel = 0;
   }
 }

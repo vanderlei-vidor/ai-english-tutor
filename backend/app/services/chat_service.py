@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import re
 import random
 import requests
 from dotenv import load_dotenv
@@ -10,6 +11,10 @@ from app.services.error_pattern_engine import detect_known_error
 
 # Importação da nova Skill Exercise Engine (Fase 9)
 from app.services.skill_exercise_engine import get_skill_specific_exercise
+
+# 🎓 MUDANÇA 3: Importe centralizado no topo para evitar duplicidade nos escopos locais
+from app.services.level_estimator import estimate_level
+from app.services.personalized_learning_engine import get_weakest_skill
 
 load_dotenv()
 
@@ -235,16 +240,23 @@ def generate_response(messages: list, memory_data: dict) -> dict:
     theme = top_topics[0].lower() if top_topics else "technology"
 
     weak_skills = memory_data.get("weak_skills", {})
+
+    from app.services.weighted_teaching_engine import (
+    choose_teaching_skill
+    )
+
+    exercise_focus = choose_teaching_skill(
+    memory_data
+    )
+
+
+
     top_weak_skills = get_top_errors(
         weak_skills if isinstance(weak_skills, dict) else {}
     )
     top_errors = get_top_errors(memory_data.get("common_errors", {}))
 
-    exercise_focus = (
-        top_weak_skills[0]
-        if top_weak_skills
-        else (top_errors[0] if top_errors else "past_tense")
-    )
+    
     exercise_type = choose_exercise_type(memory_data)
 
     weakness_score = weak_skills.get(exercise_focus, 0)
@@ -325,10 +337,13 @@ Exercise Required Right Now: {"YES" if exercise_required else "NO"}
 
         raw_text = response.json()["choices"][0]["message"]["content"].strip()
 
-        cleaned_text = raw_text.replace(",}", "}").replace(",]", "]")
+        # Remove vírgulas extras antes de fechar chaves ou colchetes, mesmo com espaços/quebras de linha
+        cleaned_text = re.sub(r",\s*}", "}", raw_text)
+        cleaned_text = re.sub(r",\s*]", "]", cleaned_text)
+
         if cleaned_text != raw_text:
-            print("⚠️ JSON AUTO-REPAIRED")
-        raw_text = cleaned_text
+            print("⚠️ JSON AUTO-REPAIRED (Regex Rule)")
+            raw_text = cleaned_text
 
     except Exception as e:
         print(f"❌ Erro de requisição no LM Studio: {str(e)}")
@@ -339,6 +354,9 @@ Exercise Required Right Now: {"YES" if exercise_required else "NO"}
 
         known_error = detect_known_error(messages[-1]["content"])
         print(f"KNOWN ERROR RESULT: {known_error}")
+
+        if known_error:
+            response_json["detected_skill"] = known_error["skill"]
 
         if known_error:
             print(f"🎯 ERROR PATTERN DETECTED -> {known_error['skill']}")
@@ -360,7 +378,6 @@ Exercise Required Right Now: {"YES" if exercise_required else "NO"}
         print(f"ACTION: {teacher_action} | CONFIDENCE: {confidence}")
         print("============================\n")
 
-        # 🎯 SEU NOVO TRECHO INSERIDO COM SUCESSO AQUI:
         # Guardrail de Correção
         original_correction = response_json.get("correction", "")
 
@@ -373,7 +390,6 @@ Exercise Required Right Now: {"YES" if exercise_required else "NO"}
         if is_invalid_correction(validated_correction):
             print("⚠️ INVALID CORRECTION FORMAT DETECTED")
             response_json["correction"] = ""
-        # --------------------------------------------------
 
         if response_json.get("needs_correction") and not response_json.get(
             "correction"
@@ -455,6 +471,9 @@ Exercise Required Right Now: {"YES" if exercise_required else "NO"}
         print(f"FINAL ACTION DETERMINED: {final_action}")
         print("==============================\n")
 
+        # ==========================================================
+        # RESOLUÇÃO DE AÇÕES PEDAGÓGICAS — FASE 11.9 (REFATORADO)
+        # ==========================================================
         if final_action == "chat":
             response_json["exercise"] = ""
 
@@ -462,39 +481,51 @@ Exercise Required Right Now: {"YES" if exercise_required else "NO"}
             response_json["exercise"] = ""
 
         elif final_action == "exercise":
-            raw_exercise = response_json.get("exercise", "")
-            response_json["exercise"] = validate_and_fix_exercise(
-                raw_exercise,
-                exercise_type,
-                theme,
-                exercise_focus,
+            print(
+                f"🎯 SKILL EXERCISE ENGINE ACTIVATED FOR EXERCISE -> {exercise_focus}"
             )
 
+            # 1. Extração unificada dos níveis para o log
+            memory_level = memory_data.get("english_level", "A2")
+            advanced_structures = memory_data.get("advanced_structures", {})
+            estimated_level = estimate_level(advanced_structures)
+            adaptive_level = estimated_level
+
+            # 🎓 Prints de telemetria
+            print(f"🎓 MEMORY LEVEL: {memory_level}")
+            print(f"🎓 ESTIMATED LEVEL: {estimated_level}")
+            print(f"🎓 ADAPTIVE LEVEL USED: {adaptive_level}")
+            print("==================================================\n")
+
+            # Invocação da engine com o nível dinâmico mapeado
+            response_json["exercise"] = get_skill_specific_exercise(
+                skill=exercise_focus, level=adaptive_level, exercise_type=exercise_type
+            )
+            print(f"🎯 ADAPTIVE EXERCISE GENERATED: {response_json['exercise']}")
+
         elif final_action == "question":
-            current_exercise = response_json.get("exercise", "")
+            # 🎓 MUDANÇA 1 & 3: Limpeza completa do bloco morto redundante e remoção de imports duplicados
+            advanced_structures = memory_data.get("advanced_structures", {})
+            adaptive_level = estimate_level(advanced_structures)
 
-            if backend_wants_teaching and exercise_required:
-                current_exercise = validate_and_fix_exercise(
-                    current_exercise,
-                    exercise_type,
-                    theme,
-                    exercise_focus,
-                )
-
-                response_json["exercise"] = current_exercise
-                print(
-                    f"🎯 SKILL EXERCISE ENGINE ACTIVATED FOR QUESTION -> {exercise_focus}"
-                )
-                response_json["exercise"] = get_skill_specific_exercise(
-                    exercise_focus, exercise_type
-                )
-                print(f"🎯 EXERCISE GENERATED: {response_json['exercise']}")
+            # 🎓 MUDANÇA 2: Corrigido o motor adaptativo para passar 'adaptive_level' em vez de 'english_level'
+            response_json["exercise"] = get_skill_specific_exercise(
+                skill=exercise_focus,
+                level=adaptive_level,
+                exercise_type=exercise_type,
+            )
+            print(
+                f"🎯 ADAPTIVE EXERCISE GENERATED (IN QUESTION MODE): {response_json['exercise']}"
+            )
 
         print("\n=== AI SUMMARY DECISION ===")
         print(f"ACTION: {response_json.get('teacher_action')}")
         print(f"CORRECTION: {response_json.get('needs_correction')}")
         print(f"CONFIDENCE: {response_json.get('grammar_confidence')}")
         print("===================\n")
+        print(f"🎯 RESPONSE SKILL: {response_json.get('detected_skill')}")
+
+        response_json["target_skill"] = exercise_focus
 
         return response_json
 

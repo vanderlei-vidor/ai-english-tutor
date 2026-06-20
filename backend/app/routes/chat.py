@@ -31,6 +31,7 @@ from app.services.level_detection import (
 
 # FASE 11.7: Importando tanto o estimador de nível quanto o calculador de score de nível
 from app.services.level_estimator import estimate_level, calculate_level_score
+from app.services.correction_validator import is_real_correction_by_skill
 
 router = APIRouter()
 
@@ -41,6 +42,19 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# 🔥 FASE 12.2: Guardrail para evitar falsas correções da IA
+def is_real_correction(user_message: str, correction: str) -> bool:
+    if not correction:
+        return False
+
+    # Remove variações de caixa alta e pontuações periféricas comuns
+    user_clean = user_message.lower().strip(" .!?\"'")
+    correction_clean = correction.lower().strip(" .!?\"'")
+
+    # Se a correção limpa for idêntica à mensagem limpa do usuário, não é uma correção real
+    return user_clean != correction_clean
 
 
 @router.post("/chat")
@@ -106,6 +120,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         user_memory.data = {
             **user_memory.data,
             "advanced_structures": advanced_structures,
+            "english_level": estimated_level,
         }
 
         db.commit()
@@ -141,14 +156,55 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         db.add(ai_message)
         db.commit()
 
+        print(f"🚀 CHAT.PY DETECTED SKILL: {ai_response_dict.get('detected_skill')}")
+
+        # ==========================================================
+        # 🔥 INTERCEPÇÃO FASE 12.2: VALIDANDO FALSE CORRECTIONS
+        # ==========================================================
+        correction_text = ai_response_dict.get("correction", "")
+        needs_correction = ai_response_dict.get("needs_correction", False)
+
+        real_correction = is_real_correction(user_text, correction_text)
+
+        if needs_correction and not real_correction:
+            print("⚠️ FALSE CORRECTION DETECTED -> converting to success")
+            ai_response_dict["needs_correction"] = False
+            ai_response_dict["teacher_action"] = "chat"
+            ai_response_dict["correction"] = "Correct! ✨"
+            ai_response_dict["detected_skill"] = None
+
+        print(
+                f"🚀 CHAT.PY DETECTED SKILL: {ai_response_dict.get('detected_skill')}"
+            )
+
+        target_skill = ai_response_dict.get("target_skill")
+
+        had_error = is_real_correction_by_skill(
+        correction=ai_response_dict.get("correction", ""),
+        teacher_action=ai_response_dict.get("teacher_action", ""),
+        needs_correction=ai_response_dict.get("needs_correction", False),
+        target_skill=target_skill,
+    )
+        # ==========================================================
+
+        print("======== ERROR DEBUG ========")
+        print(ai_response_dict.get("correction"))
+        print(ai_response_dict.get("needs_correction"))
+        print(ai_response_dict.get("teacher_action"))
+        print(f"HAD_ERROR = {had_error}")
+        print("=============================")
+
         # Atualiza a memória de erros/skills tradicional do app
         update_memory_from_message(
             db=db,
             user_id=request.user_id,
-            user_message=user_text,
+            user_message=request.message,
             correction=ai_response_dict.get("correction", ""),
             exercise=ai_response_dict.get("exercise", ""),
             teacher_action=ai_response_dict.get("teacher_action", "chat"),
+            detected_skill=ai_response_dict.get("detected_skill"),
+            target_skill=target_skill,
+            had_error=had_error,
         )
 
         # Sincroniza a memória final para o retorno da API
@@ -185,7 +241,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         db.commit()
 
         # 🔥 XP SYSTEM
-        had_error = score < 100
+        had_error_xp = score < 100
         xp_record = db.query(XP).filter(XP.user_id == request.user_id).first()
         if not xp_record:
             xp_record = XP(user_id=request.user_id, total_xp=0)
@@ -193,7 +249,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(xp_record)
 
-        earned_xp = calculate_xp(score, had_error, streak.current_streak)
+        earned_xp = calculate_xp(score, had_error_xp, streak.current_streak)
         xp_record.total_xp += earned_xp
         db.commit()
 
