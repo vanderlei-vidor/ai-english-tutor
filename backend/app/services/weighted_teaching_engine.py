@@ -1,25 +1,30 @@
-import random
+from app.services.skill_score_service import (
+    calculate_skill_scores,
+    get_highest_priority_skill,
+)
 
 
-def choose_teaching_skill(memory_data):
-    mastery = memory_data.get("skill_mastery", {})
+def choose_teaching_skill(memory_data: dict) -> str:
+    """
+    Escolhe a skill pedagógica prioritária com base
+    na pontuação normalizada entre:
+    - dificuldade atual (skill_mastery)
+    - histórico acumulado de erros (weak_skills)
+    """
 
-    # Se não houver dados, retorna o fallback padrão
-    if not mastery:
+    skill_scores = calculate_skill_scores(memory_data)
+
+    print("======== NORMALIZED SKILL SCORES ========")
+    for skill, score in skill_scores.items():
+        print(f"{skill}: {score}")
+    print("=========================================")
+
+    if not skill_scores:
+        print("⚠️ NO SKILL SCORES FOUND - FALLBACK TO past_tense")
         return "past_tense"
 
-    skills = list(mastery.keys())
+    target_skill = get_highest_priority_skill(memory_data)
 
-    # 🧠 LÓGICA PEDAGÓGICA: Invertemos o peso.
-    # Se a maestria é 90 (alta), o peso vira 10 (muda pouco).
-    # Se a maestria é 10 (baixa), o peso vira 90 (muda muito, pratica mais!).
-    weights = [max(1, 100 - score) for score in mastery.values()]
+    print(f"🎯 NORMALIZED SKILL SELECTED: {target_skill}")
 
-    # ⚡ PERFORMANCE: random.choices faz a seleção ponderada direto na matemática,
-    # sem precisar criar listas gigantescas repetindo strings na memória.
-    selected_skill = random.choices(skills, weights=weights, k=1)[0]
-
-    # Dica: Substitua por logging em produção se puder, mas para o terminal ajuda
-    print(f"🎯 WEIGHTED SKILL SELECTED: {selected_skill}")
-
-    return selected_skill
+    return target_skill or "past_tense"
