@@ -31,7 +31,12 @@ from app.services.level_detection import (
 
 # FASE 11.7: Importando tanto o estimador de nível quanto o calculador de score de nível
 from app.services.level_estimator import estimate_level, calculate_level_score
-from app.services.correction_validator import is_real_correction_by_skill
+from app.services.correction_validator import (
+    is_real_english_error,
+    is_real_correction_by_skill,
+    detect_non_target_skill,
+    analyze_correction_validity,
+)
 
 router = APIRouter()
 
@@ -44,24 +49,15 @@ def get_db():
         db.close()
 
 
-# 🔥 FASE 12.2: Guardrail para evitar falsas correções da IA
-def is_real_correction(user_message: str, correction: str) -> bool:
-    if not correction:
-        return False
-
-    # Remove variações de caixa alta e pontuações periféricas comuns
-    user_clean = user_message.lower().strip(" .!?\"'")
-    correction_clean = correction.lower().strip(" .!?\"'")
-
-    # Se a correção limpa for idêntica à mensagem limpa do usuário, não é uma correção real
-    return user_clean != correction_clean
-
-
 @router.post("/chat")
 def chat(request: ChatRequest, db: Session = Depends(get_db)):
     try:
         # 📝 Centraliza o texto do usuário para deixar o código limpo
         user_text = request.message
+
+        had_error = False
+        target_skill_error = False
+        target_skill = None
 
         # 1️⃣ Se já existe conversation_id → usar
         if request.conversation_id:
@@ -142,12 +138,147 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             for msg in history[-8:]
         ]
 
-        # 5️⃣ Chamar IA (Passando a memória já salva com os novos níveis e contadores)
+        # 1) Gerar resposta da IA
         ai_response_dict = generate_response(messages_for_ai, user_memory.data)
         if "error" in ai_response_dict:
             return ai_response_dict
 
-        # 7️⃣ Salvar resposta da IA
+        # 2) Rodar o Routing Sanitizer (FASE 12.8)
+        target_skill = ai_response_dict.get("target_skill")
+        correction_text = ai_response_dict.get("correction", "")
+        teacher_action = ai_response_dict.get("teacher_action", "")
+        needs_correction = ai_response_dict.get("needs_correction", False)
+        detected_skill = ai_response_dict.get("detected_skill")
+
+        # ----------------------------------------------------------
+        # FASE 12.8 — separar:
+        # A) erro real de inglês
+        # B) erro da skill-alvo
+        # C) erro real fora da skill-alvo + fallback de skill
+        # ----------------------------------------------------------
+        sanitizer_analysis = analyze_correction_validity(
+            user_text=user_text,
+            correction=correction_text,
+            teacher_action=teacher_action,
+            needs_correction=needs_correction,
+            target_skill=target_skill,
+            detected_skill=detected_skill,
+        )
+
+        has_any_real_error = sanitizer_analysis["is_real_error"]
+        sanitizer_reason = sanitizer_analysis["reason"]
+
+        initial_target_skill_error = is_real_correction_by_skill(
+            correction=correction_text,
+            target_skill=target_skill,
+        )
+
+        fallback_skill = None
+
+        if has_any_real_error and not initial_target_skill_error and not detected_skill:
+            fallback_skill = detect_non_target_skill(user_text, correction_text)
+
+        if fallback_skill:
+            ai_response_dict["detected_skill"] = fallback_skill
+
+        if has_any_real_error and not initial_target_skill_error and fallback_skill:
+            sanitizer_reason = f"real_non_target_error:{fallback_skill}"
+
+        # 🔥 Sincroniza detected_skill com o estado final do dict
+        detected_skill = ai_response_dict.get("detected_skill")
+
+        print("======== ROUTING SANITIZER DEBUG ========")
+        print(f"USER TEXT:               {user_text}")
+        print(f"CORRECTION TEXT:         {correction_text}")
+        print(f"TEACHER ACTION:          {teacher_action}")
+        print(f"NEEDS CORRECTION:        {needs_correction}")
+        print(f"TARGET SKILL:            {target_skill}")
+        print(f"DETECTED SKILL:          {detected_skill}")
+        print(f"FALLBACK SKILL:          {fallback_skill}")
+        print(f"SANITIZER REASON:        {sanitizer_reason}")
+        print("=========================================")
+
+        # ==========================================================
+        # CENÁRIO 1 — IA marcou correction, mas NÃO há erro real
+        # ==========================================================
+        if teacher_action == "correction" and not has_any_real_error:
+            print(f"⚠️ SANITIZER CONVERTED TO SUCCESS -> reason={sanitizer_reason}")
+            
+            ai_response_dict["teacher_action"] = "chat"
+            ai_response_dict["needs_correction"] = False
+            ai_response_dict["correction"] = "Correct! ✨"
+            ai_response_dict["conversation_reply"] = "Correct! ✨"
+            ai_response_dict["detected_skill"] = None
+
+        # ==========================================================
+        # CENÁRIO 2 — existe erro real, mas NÃO é da skill-alvo
+        # Usa o snapshot inicial estável pré-sanitização
+        # ==========================================================
+        elif (
+            teacher_action == "correction"
+            and has_any_real_error
+            and not initial_target_skill_error
+        ):
+            print(
+                f"🟡 REAL ERROR OUTSIDE TARGET SKILL -> keeping correction without contaminating target skill | reason={sanitizer_reason}"
+            )
+            ai_response_dict["teacher_action"] = "correction"
+            ai_response_dict["needs_correction"] = True
+
+            if not ai_response_dict.get("detected_skill"):
+                ai_response_dict["detected_skill"] = "other_skill"
+
+        # ==========================================================
+        # CENÁRIO 3 — erro real da skill-alvo
+        # ==========================================================
+        else:
+            print(f"✅ ROUTING KEPT AS-IS -> reason={sanitizer_reason}")
+
+        # 3) Recalcular variáveis finais com base na decisão sanitizada
+        teacher_action = ai_response_dict.get("teacher_action", "")
+        needs_correction = ai_response_dict.get("needs_correction", False)
+        correction_text = ai_response_dict.get("correction", "")
+        detected_skill = ai_response_dict.get("detected_skill")
+
+        # had_error = houve erro real de inglês
+        had_error = is_real_english_error(
+            user_text=user_text,
+            correction=correction_text,
+            teacher_action=teacher_action,
+            needs_correction=needs_correction,
+            target_skill=target_skill,
+            detected_skill=detected_skill,
+        )
+
+        # target_skill_error = erro real pertence à skill-alvo (recalculado pós-sanitizer)
+        target_skill_error = (
+            teacher_action == "correction"
+            and needs_correction
+            and is_real_correction_by_skill(
+                correction=correction_text,
+                target_skill=target_skill,
+            )
+        )
+
+
+        print("========== TARGET SKILL CHECK ==========")
+        print(f"TARGET SKILL: {target_skill}")
+        print(f"DETECTED SKILL: {detected_skill}")
+        print(f"CORRECTION: {correction_text}")
+        print(f"TARGET SKILL ERROR: {target_skill_error}")
+        print("========================================")
+
+        print("======== FINAL SANITIZED STATE ========")
+        print(f"FINAL TEACHER_ACTION:     {teacher_action}")
+        print(f"FINAL NEEDS_CORRECTION:   {needs_correction}")
+        print(f"FINAL CORRECTION:         {correction_text}")
+        print(f"FINAL DETECTED_SKILL:     {detected_skill}")
+        print(f"FINAL HAD_ERROR:          {had_error}")
+        print(f"FINAL TARGET_SKILL_ERR:   {target_skill_error}")
+        print(f"FINAL SANITIZER_REASON:   {sanitizer_reason}")
+        print("=======================================")
+
+        # 4) Só agora salvar a resposta da IA de forma segura no Banco de Dados
         ai_message = Message(
             conversation_id=conversation.id,
             sender="ai",
@@ -155,44 +286,6 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         )
         db.add(ai_message)
         db.commit()
-
-        print(f"🚀 CHAT.PY DETECTED SKILL: {ai_response_dict.get('detected_skill')}")
-
-        # ==========================================================
-        # 🔥 INTERCEPÇÃO FASE 12.2: VALIDANDO FALSE CORRECTIONS
-        # ==========================================================
-        correction_text = ai_response_dict.get("correction", "")
-        needs_correction = ai_response_dict.get("needs_correction", False)
-
-        real_correction = is_real_correction(user_text, correction_text)
-
-        if needs_correction and not real_correction:
-            print("⚠️ FALSE CORRECTION DETECTED -> converting to success")
-            ai_response_dict["needs_correction"] = False
-            ai_response_dict["teacher_action"] = "chat"
-            ai_response_dict["correction"] = "Correct! ✨"
-            ai_response_dict["detected_skill"] = None
-
-        print(
-                f"🚀 CHAT.PY DETECTED SKILL: {ai_response_dict.get('detected_skill')}"
-            )
-
-        target_skill = ai_response_dict.get("target_skill")
-
-        had_error = is_real_correction_by_skill(
-        correction=ai_response_dict.get("correction", ""),
-        teacher_action=ai_response_dict.get("teacher_action", ""),
-        needs_correction=ai_response_dict.get("needs_correction", False),
-        target_skill=target_skill,
-    )
-        # ==========================================================
-
-        print("======== ERROR DEBUG ========")
-        print(ai_response_dict.get("correction"))
-        print(ai_response_dict.get("needs_correction"))
-        print(ai_response_dict.get("teacher_action"))
-        print(f"HAD_ERROR = {had_error}")
-        print("=============================")
 
         # Atualiza a memória de erros/skills tradicional do app
         update_memory_from_message(
@@ -205,6 +298,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             detected_skill=ai_response_dict.get("detected_skill"),
             target_skill=target_skill,
             had_error=had_error,
+            target_skill_error=target_skill_error,
         )
 
         # Sincroniza a memória final para o retorno da API
