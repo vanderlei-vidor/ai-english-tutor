@@ -4,13 +4,19 @@ from app.services.grammar_engine.concepts.base import BaseConceptResolver
 from app.services.grammar_engine.concepts.concepts_db.a2.simple_past import (
     SIMPLE_PAST,
 )
+from app.services.grammar_engine.constants import MarkerCategory
 
 
 class SimplePastResolver(BaseConceptResolver):
     def resolve(self, analysis):
 
-        for error in analysis.errors:
-            if error.skill == "past_tense":
-                analysis.concepts.append(SIMPLE_PAST)
+        has_past_marker = any(
+            marker.category == MarkerCategory.PAST
+            for marker in analysis.context.markers
+        )
 
-                return
+        if not has_past_marker:
+            return
+
+        if SIMPLE_PAST not in analysis.concepts:
+            analysis.concepts.append(SIMPLE_PAST)

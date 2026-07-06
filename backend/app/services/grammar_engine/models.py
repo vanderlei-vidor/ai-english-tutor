@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
 from app.services.grammar_engine.constants import MarkerCategory
+from app.services.learning.models import LearningProfile
+
 
 
 if TYPE_CHECKING:
@@ -14,6 +16,10 @@ if TYPE_CHECKING:
     from app.services.pedagogical.models import TeachingPlan
 
     from app.services.pedagogical.lesson_models import TeachingLesson
+
+    from app.services.learning.models import LearningProfile
+
+    from app.services.learning.events import LearningEvent
 
 
 # ==========================================================
@@ -160,6 +166,20 @@ class GrammarAnalysis:
     # ==========================================
 
     concepts: list["GrammarConcept"] = field(default_factory=list)
+
+
+    # ==========================================
+    # Learning Events
+    # ==========================================
+
+    learning_events: list["LearningEvent"] = field(default_factory=list)
+
+    # ==========================================
+    # Learning Layer
+    # ==========================================
+
+    
+    learning_profile: Optional["LearningProfile"] = None
 
     # ==========================================
     # Pedagogical Layer
