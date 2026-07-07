@@ -1,3 +1,4 @@
+import profile
 import uuid
 import json
 from datetime import date, timedelta
@@ -54,6 +55,106 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
     try:
         # 📝 Centraliza o texto do usuário para deixar o código limpo
         user_text = request.message
+        from app.services.grammar_engine.engine import grammar_engine
+        analysis = grammar_engine.analyze(user_text)
+
+        grammar_has_errors = bool(analysis.errors)
+
+        print()
+
+        print("=" * 60)
+
+        print("🧠 ERROR DETECTION")
+
+        print("=" * 60)
+
+        print(f"Grammar Engine Errors : {grammar_has_errors}")
+
+        print(f"Errors Count          : {len(analysis.errors)}")
+
+        print("=" * 60)
+
+        print()
+
+        
+
+        print()
+        print("=" * 60)
+        print("🧠 NEW GRAMMAR ENGINE (SHADOW MODE)")
+        print("=" * 60)
+
+        print(f"Sentence: {user_text}")
+
+        print()
+
+        print("Errors:")
+
+        if analysis.has_errors:
+            for skill in analysis.detected_skills:
+                print(f" • {skill}")
+        else:
+            print(" None")
+
+        print()
+
+        print()
+
+        print("Primary Error")
+
+        if analysis.primary_error:
+            print(analysis.primary_error.skill)
+        else:
+            print("None")
+
+        print()
+        print("Concepts")
+
+        if analysis.has_concepts:
+            for name in analysis.concept_names:
+                print(f" • {name}")
+        else:
+            print(" None")
+
+            print()
+
+        print()
+
+        print("Primary Concept")
+
+        if analysis.primary_concept:
+            print(analysis.primary_concept.name)
+        else:
+            print("None")
+
+        profile = analysis.learning_profile
+
+        if profile:
+
+            print("Learning Profile")
+
+            print(f" Current Focus : {profile.current_focus}")
+
+            print(f" Accuracy      : {profile.overall_accuracy:.2f}%")
+
+            print(f" Weak Skills   : {profile.weak_skills}")
+
+            print(f" Mastered      : {profile.mastered_skills}")
+
+        print("=" * 60)
+        print()
+
+        print()
+
+        # ==========================================
+        # NEW PEDAGOGICAL ENGINE
+        # ==========================================
+
+        new_target_skill = None
+
+        if analysis.learning_profile:
+            new_target_skill = analysis.learning_profile.current_focus
+
+        
 
         had_error = False
         target_skill_error = False
@@ -144,7 +245,21 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             return ai_response_dict
 
         # 2) Rodar o Routing Sanitizer (FASE 12.8)
-        target_skill = ai_response_dict.get("target_skill")
+        #target_skill = ai_response_dict.get("target_skill")
+        legacy_target_skill = ai_response_dict.get("target_skill")
+
+        target_skill = new_target_skill or legacy_target_skill
+        print()
+        print("=" * 60)
+        print("⚖️ TARGET SKILL MIGRATION")
+        print("=" * 60)
+
+        print(f"Legacy Target Skill : {legacy_target_skill}")
+        print(f"New Current Focus   : {new_target_skill}")
+        print(f"Using               : {target_skill}")
+
+        print("=" * 60)
+        print()
         correction_text = ai_response_dict.get("correction", "")
         teacher_action = ai_response_dict.get("teacher_action", "")
         needs_correction = ai_response_dict.get("needs_correction", False)
@@ -249,6 +364,20 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             target_skill=target_skill,
             detected_skill=detected_skill,
         )
+
+        # ==========================================================
+        # SHADOW MODE: Validação da Migração de Erros
+        # ==========================================================
+        legacy_had_error = had_error
+        new_had_error = bool(analysis.errors)
+
+        print()
+        print("=" * 60)
+        print("⚖️ ERROR MIGRATION")
+        print("=" * 60)
+        print(f"Legacy Error : {legacy_had_error}")
+        print(f"Grammar      : {new_had_error}")
+        print("=" * 60)
 
         # target_skill_error = erro real pertence à skill-alvo (recalculado pós-sanitizer)
         target_skill_error = (

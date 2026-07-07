@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
 from app.services.grammar_engine.constants import MarkerCategory
-from app.services.learning.models import LearningProfile
+
 
 
 
@@ -203,6 +203,162 @@ class GrammarAnalysis:
 
     matched_rules: list[str] = field(default_factory=list)
 
-    detected_skills: list[str] = field(default_factory=list)
+    
 
     metadata: dict[str, object] = field(default_factory=dict)
+
+    # ==========================================================
+    # Grammar Analysis API
+    # ==========================================================
+
+
+    @property
+    def has_errors(self) -> bool:
+        """
+        Retorna True se existir pelo menos um erro gramatical.
+        """
+        return bool(self.errors)
+
+
+    @property
+    def primary_error(self):
+        """
+        Primeiro erro encontrado.
+        """
+        if not self.errors:
+            return None
+
+        return self.errors[0]
+
+
+    @property
+    def detected_skills(self) -> list[str]:
+        """
+        Lista de todas as habilidades detectadas.
+        """
+        return [error.skill for error in self.errors]
+
+    # ==========================================================
+    # Concept API
+    # ==========================================================
+
+
+    @property
+    def has_concepts(self) -> bool:
+        """
+        True se algum conceito foi identificado.
+        """
+        return bool(self.concepts)
+
+
+    @property
+    def primary_concept(self):
+        """
+        Primeiro conceito identificado.
+        """
+        if not self.concepts:
+            return None
+
+        return self.concepts[0]
+
+
+    @property
+    def concept_names(self) -> list[str]:
+        """
+        Lista com os nomes dos conceitos encontrados.
+        """
+        return [concept.name for concept in self.concepts]
+
+    # ==========================================================
+    # Learning API
+    # ==========================================================
+
+
+    @property
+    def has_learning_profile(self) -> bool:
+        """
+        Retorna True se existir um perfil de aprendizagem.
+        """
+        return self.learning_profile is not None
+
+
+    @property
+    def has_learning_focus(self) -> bool:
+        """
+        Retorna True se houver uma habilidade em foco.
+        """
+        return (
+            self.learning_profile is not None
+            and self.learning_profile.current_focus is not None
+        )
+
+
+    @property
+    def current_focus(self) -> str | None:
+        """
+        Skill atualmente em foco.
+        """
+        if self.learning_profile is None:
+            return None
+
+        return self.learning_profile.current_focus
+
+    # ==========================================================
+    # Lesson API
+    # ==========================================================
+
+
+    @property
+    def has_lessons(self) -> bool:
+        return bool(self.presented_lessons)
+
+
+    @property
+    def primary_lesson(self):
+        if not self.presented_lessons:
+            return None
+
+        return self.presented_lessons[0]
+
+    # ==========================================================
+    # Teaching API
+    # ==========================================================
+
+
+    @property
+    def has_teaching_plans(self) -> bool:
+        return bool(self.teaching_plans)
+
+
+    @property
+    def primary_teaching_plan(self):
+        if not self.teaching_plans:
+            return None
+
+        return self.teaching_plans[0]
+    
+    # ==========================================================
+    # summary API
+    # ==========================================================
+    
+
+    @property
+    def summary(self) -> dict:
+        """
+        Resumo de alto nível da análise.
+        """
+
+        return {
+            "has_errors": self.has_errors,
+            "primary_skill": (self.primary_error.skill if self.primary_error else None),
+            "has_concepts": self.has_concepts,
+            "primary_concept": (
+                self.primary_concept.name if self.primary_concept else None
+            ),
+            "current_focus": self.current_focus,
+            "accuracy": (
+                self.learning_profile.overall_accuracy
+                if self.has_learning_profile
+                else 0.0
+            ),
+        }
