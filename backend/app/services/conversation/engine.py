@@ -9,7 +9,7 @@ from app.services.conversation.registry import (
 from app.services.pedagogical.analysis import (
     PedagogicalAnalysis,
 )
-from app.services.teacher.decision import (
+from app.services.teacher.models import (
     TeacherDecision,
 )
 

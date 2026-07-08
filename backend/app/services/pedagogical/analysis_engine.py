@@ -30,13 +30,27 @@ class PedagogicalAnalysisEngine:
     ) -> PedagogicalAnalysis:
 
         complexity_score, structures = detect_advanced_structures(text)
+        primary_error_skill = (
+            grammar.primary_error.skill
+            if grammar.primary_error
+            else None
+        )
+        target_skill = grammar.current_focus or primary_error_skill
 
         pedagogical = PedagogicalAnalysis(
             complexity_score=complexity_score,
             complexity_points=calculate_complexity_points(complexity_score),
             structures=structures,
             current_focus=grammar.current_focus,
-            target_skill=grammar.current_focus,
+            target_skill=target_skill,
+            detected_skill=primary_error_skill,
+            had_error=grammar.has_errors,
+            target_skill_error=(
+                grammar.has_errors
+                and target_skill is not None
+                and primary_error_skill is not None
+                and target_skill == primary_error_skill
+            ),
         )
 
         self._calculate_level(

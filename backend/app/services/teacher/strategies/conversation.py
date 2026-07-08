@@ -1,6 +1,5 @@
 from __future__ import annotations
-
-from app.services.teacher.decision import TeacherDecision
+from app.services.teacher.models import TeacherDecision, TeacherIntent
 from app.services.teacher.strategies.base import TeacherStrategy
 from app.services.pedagogical.analysis import PedagogicalAnalysis
 
@@ -23,6 +22,8 @@ class ConversationStrategy(TeacherStrategy):
     ) -> TeacherDecision:
 
         return TeacherDecision(
+            intent=TeacherIntent.CONVERSATION,
+            priority=10,
             teacher_action="chat",
             teacher_strategy="conversation",
             teacher_reason="Natural conversation.",
@@ -34,4 +35,3 @@ class ConversationStrategy(TeacherStrategy):
             target_skill=pedagogical.target_skill,
             detected_skill=pedagogical.detected_skill,
         )
-    

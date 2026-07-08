@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from app.services.teacher.decision import TeacherDecision
+from app.services.teacher.models import TeacherDecision
 from app.services.pedagogical.analysis import PedagogicalAnalysis
 from app.services.grammar_engine.models import (
     GrammarAnalysis,

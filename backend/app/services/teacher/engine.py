@@ -1,48 +1,66 @@
 from __future__ import annotations
 
-from app.services.teacher.decision import (
-    TeacherDecision,
-)
+from app.services.teacher.context import TeacherContext
 
-from app.services.pedagogical.analysis import (
-    PedagogicalAnalysis,
+from app.services.teacher.decision.engine import (
+    teacher_decision_engine,
 )
 
 from app.services.teacher.registry import (
     teacher_registry,
 )
-from app.services.grammar_engine.models import (
-    GrammarAnalysis,
+
+from app.services.teacher.models import (
+    TeacherDecision,
 )
 
 
 class TeacherEngine:
     """
-    Responsável apenas por selecionar
-    a estratégia pedagógica adequada.
+    Coordena o Teacher Brain.
 
-    Toda a inteligência fica nas Strategies.
+    O TeacherEngine não toma decisões.
+    Ele apenas coordena o fluxo.
+
+        Context
+            ↓
+        Decision Engine
+            ↓
+        Registry
+            ↓
+        Strategy
+            ↓
+        TeacherDecision
     """
 
     def decide(
         self,
-        grammar: GrammarAnalysis,
-        pedagogical: PedagogicalAnalysis,
+        context: TeacherContext,
     ) -> TeacherDecision:
 
+        decision = teacher_decision_engine.decide(
+            context,
+        )
+
         strategy = teacher_registry.select(
-            grammar,
-            pedagogical,
+            intent=decision.intent,
+            context=context,
         )
 
-        decision = strategy.build(
-            grammar,
-            pedagogical,
+        teacher_decision = strategy.build(
+            context.grammar,
+            context.pedagogical,
         )
 
-        print(f"🎯 TEACHER STRATEGY SELECTED: {strategy.__class__.__name__}")
+        print()
+        print("=" * 60)
+        print("TEACHER BRAIN")
+        print("=" * 60)
+        print(f"Intent  : {teacher_decision.intent.value}")
+        print(f"Strategy: {strategy.__class__.__name__}")
+        print("=" * 60)
 
-        return decision
+        return teacher_decision
 
 
 teacher_engine = TeacherEngine()

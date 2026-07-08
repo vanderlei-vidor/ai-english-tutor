@@ -32,6 +32,10 @@ class PedagogicalSanitizer:
             user_text,
         )
 
+        self._preserve_grammar_confirmed_error(
+            pedagogical,
+        )
+
         self._remove_false_corrections(
             pedagogical,
             ai_response,
@@ -49,8 +53,10 @@ class PedagogicalSanitizer:
             ai_response,
         )
 
-        # Próxima fase (FASE 26)
-        # self._calculate_error_state(pedagogical, ai_response)
+        self._calculate_error_state(
+            pedagogical,
+            initial_target_skill_error,
+        )
 
     def _analyze(
         self,
@@ -70,6 +76,18 @@ class PedagogicalSanitizer:
         pedagogical.sanitizer_reason = sanitizer_analysis["reason"]
         pedagogical.has_any_real_error = sanitizer_analysis["is_real_error"]
 
+    def _preserve_grammar_confirmed_error(
+        self,
+        pedagogical: PedagogicalAnalysis,
+    ) -> None:
+        """
+        O sanitizer pode bloquear falsos positivos do LLM, mas nao deve apagar
+        um erro ja confirmado pelo Grammar Engine na skill alvo.
+        """
+        if pedagogical.had_error and pedagogical.target_skill_error:
+            pedagogical.has_any_real_error = True
+            pedagogical.sanitizer_reason = "grammar_confirmed_error"
+
     def _remove_false_corrections(
         self,
         pedagogical: PedagogicalAnalysis,
@@ -81,7 +99,7 @@ class PedagogicalSanitizer:
             and not pedagogical.has_any_real_error
         ):
             print(
-                f"⚠️ SANITIZER CONVERTED TO SUCCESS -> "
+                f"WARNING: SANITIZER CONVERTED TO SUCCESS -> "
                 f"reason={pedagogical.sanitizer_reason}"
             )
 
@@ -102,7 +120,19 @@ class PedagogicalSanitizer:
         Método reservado para a resolução de habilidades secundárias/fallback.
         """
         # Nota: Mantido conforme a chamada do seu fluxo original
-        pass
+        if not pedagogical.has_any_real_error:
+            return
+
+        detected_skill = ai_response.get("detected_skill")
+        target_skill = pedagogical.target_skill
+
+        if (
+            detected_skill
+            and target_skill
+            and detected_skill != target_skill
+        ):
+            pedagogical.fallback_skill = detected_skill
+            ai_response["fallback_skill"] = detected_skill
 
     def _sync_ai_response(
         self,
@@ -114,6 +144,30 @@ class PedagogicalSanitizer:
         refletem instantaneamente de volta no objeto PedagogicalAnalysis.
         """
         pedagogical.load_ai_response(ai_response)
+
+    def _calculate_error_state(
+        self,
+        pedagogical: PedagogicalAnalysis,
+        initial_target_skill_error: bool,
+    ) -> None:
+        """
+        Consolida o estado final usado por memória, XP e logs.
+        """
+        grammar_had_error = pedagogical.had_error
+        pedagogical.had_error = grammar_had_error or pedagogical.has_any_real_error
+
+        detected_skill = pedagogical.detected_skill
+        target_skill = pedagogical.target_skill
+
+        pedagogical.target_skill_error = pedagogical.had_error and (
+            pedagogical.target_skill_error
+            or initial_target_skill_error
+            or (
+                detected_skill is not None
+                and target_skill is not None
+                and detected_skill == target_skill
+            )
+        )
 
 
 pedagogical_sanitizer = PedagogicalSanitizer()

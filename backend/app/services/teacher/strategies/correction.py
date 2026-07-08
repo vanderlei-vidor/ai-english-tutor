@@ -1,9 +1,19 @@
 from __future__ import annotations
 
-from app.services.teacher.decision import TeacherDecision
+from app.services.teacher.models import (
+    TeacherDecision,
+    TeacherIntent,
+)
+
 from app.services.teacher.strategies.base import TeacherStrategy
-from app.services.pedagogical.analysis import PedagogicalAnalysis
-from app.services.grammar_engine.models import GrammarAnalysis
+
+from app.services.pedagogical.analysis import (
+    PedagogicalAnalysis,
+)
+
+from app.services.grammar_engine.models import (
+    GrammarAnalysis,
+)
 
 
 class CorrectionStrategy(TeacherStrategy):
@@ -22,6 +32,10 @@ class CorrectionStrategy(TeacherStrategy):
     ) -> TeacherDecision:
 
         return TeacherDecision(
+            # Nova arquitetura
+            intent=TeacherIntent.CORRECT,
+            priority=100,
+            # Compatibilidade
             teacher_action="correction",
             teacher_strategy="direct_instruction",
             teacher_reason="Grammar error detected.",

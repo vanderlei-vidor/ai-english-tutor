@@ -56,7 +56,9 @@ from app.services.conversation.engine import (
 from app.services.conversation.logger import (
     conversation_logger,
 )
-
+from app.services.teacher.context import (
+    TeacherContext,
+)
 
 router = APIRouter()
 
@@ -121,9 +123,14 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             text=user_text,
             user_memory=user_memory,
         )
-        teacher_decision = teacher_engine.decide(
+
+        teacher_context = TeacherContext(
             grammar=analysis,
             pedagogical=pedagogical,
+        )
+
+        teacher_decision = teacher_engine.decide(
+            teacher_context,
         )
 
         conversation_analysis = conversation_engine.analyze(
