@@ -1,13 +1,15 @@
-import profile
+
 import uuid
-import json
+
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models.chat_schemas import ChatRequest
-from app.models.conversation import Conversation
+from app.services.conversation.analysis import (
+    ConversationAnalysis,
+)
 from app.models.message import Message
 from app.models.progress import Progress
 from app.models.streak import Streak
@@ -21,23 +23,40 @@ from app.services.score_service import (
     get_level,
     calculate_global_score,
 )
+from app.services.grammar_engine.engine import grammar_engine
+
 from app.services.streak_service import update_streak
 from app.services.xp_service import calculate_xp, get_level_from_xp
+from app.services.pedagogical.sanitizer import (
+    pedagogical_sanitizer,
+)
+from app.services.debug.manager import debug
 
-# Importação da engine de detecção de nível avançado
-from app.services.level_detection import (
-    detect_advanced_structures,
-    calculate_complexity_points,
+from app.services.prompt_builder.builder import (
+    prompt_builder,
 )
 
-# FASE 11.7: Importando tanto o estimador de nível quanto o calculador de score de nível
-from app.services.level_estimator import estimate_level, calculate_level_score
-from app.services.correction_validator import (
-    is_real_english_error,
-    is_real_correction_by_skill,
-    detect_non_target_skill,
-    analyze_correction_validity,
+from app.services.prompt_builder.logger import (
+    prompt_builder_logger,
 )
+from app.models.conversation import Conversation
+
+from app.services.prompt_builder.composer import (
+    prompt_composer,
+)
+from app.services.teacher.engine import (
+    teacher_engine,
+)
+from app.services.teacher.logger import (
+    teacher_logger,
+)
+from app.services.conversation.engine import (
+    conversation_engine,
+)
+from app.services.conversation.logger import (
+    conversation_logger,
+)
+
 
 router = APIRouter()
 
@@ -55,110 +74,16 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
     try:
         # 📝 Centraliza o texto do usuário para deixar o código limpo
         user_text = request.message
-        from app.services.grammar_engine.engine import grammar_engine
+
+        
+
         analysis = grammar_engine.analyze(user_text)
 
-        grammar_has_errors = bool(analysis.errors)
+        from app.services.pedagogical.analysis_engine import (
+            pedagogical_analysis_engine,
+        )
 
-        print()
-
-        print("=" * 60)
-
-        print("🧠 ERROR DETECTION")
-
-        print("=" * 60)
-
-        print(f"Grammar Engine Errors : {grammar_has_errors}")
-
-        print(f"Errors Count          : {len(analysis.errors)}")
-
-        print("=" * 60)
-
-        print()
-
-        
-
-        print()
-        print("=" * 60)
-        print("🧠 NEW GRAMMAR ENGINE (SHADOW MODE)")
-        print("=" * 60)
-
-        print(f"Sentence: {user_text}")
-
-        print()
-
-        print("Errors:")
-
-        if analysis.has_errors:
-            for skill in analysis.detected_skills:
-                print(f" • {skill}")
-        else:
-            print(" None")
-
-        print()
-
-        print()
-
-        print("Primary Error")
-
-        if analysis.primary_error:
-            print(analysis.primary_error.skill)
-        else:
-            print("None")
-
-        print()
-        print("Concepts")
-
-        if analysis.has_concepts:
-            for name in analysis.concept_names:
-                print(f" • {name}")
-        else:
-            print(" None")
-
-            print()
-
-        print()
-
-        print("Primary Concept")
-
-        if analysis.primary_concept:
-            print(analysis.primary_concept.name)
-        else:
-            print("None")
-
-        profile = analysis.learning_profile
-
-        if profile:
-
-            print("Learning Profile")
-
-            print(f" Current Focus : {profile.current_focus}")
-
-            print(f" Accuracy      : {profile.overall_accuracy:.2f}%")
-
-            print(f" Weak Skills   : {profile.weak_skills}")
-
-            print(f" Mastered      : {profile.mastered_skills}")
-
-        print("=" * 60)
-        print()
-
-        print()
-
-        # ==========================================
-        # NEW PEDAGOGICAL ENGINE
-        # ==========================================
-
-        new_target_skill = None
-
-        if analysis.learning_profile:
-            new_target_skill = analysis.learning_profile.current_focus
-
-        
-
-        had_error = False
-        target_skill_error = False
-        target_skill = None
+        debug.grammar.log(analysis)
 
         # 1️⃣ Se já existe conversation_id → usar
         if request.conversation_id:
@@ -185,39 +110,52 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         db.add(user_message)
         db.commit()
 
+
+        
+
         # 🧠 Carrega a memória ANTES para poder injetar e ler as estruturas acumuladas nela
         user_memory = get_user_memory(db, request.user_id)
 
-        # 🎓 FASE EXPERIMENTAL — DETECÇÃO DE COMPLEXIDADE GRAMATICAL DA FRASE ATUAL
-        complexity_score, structures = detect_advanced_structures(user_text)
-        complexity_points = calculate_complexity_points(complexity_score)
+        pedagogical = pedagogical_analysis_engine.analyze(
+            grammar=analysis,
+            text=user_text,
+            user_memory=user_memory,
+        )
+        teacher_decision = teacher_engine.decide(
+            grammar=analysis,
+            pedagogical=pedagogical,
+        )
 
-        print(f"🎓 ADVANCED STRUCTURES DETECTED: {structures}")
-        print(f"🎓 COMPLEXITY POINTS: {complexity_points}")
+        conversation_analysis = conversation_engine.analyze(
+            pedagogical=pedagogical,
+            teacher_decision=teacher_decision,
+        )
+        teacher_logger.decision(
+            teacher_decision,
+        )
 
-        # ==========================================================
-        # FASE 11.7 - ADVANCED STRUCTURE TRACKER & LEVEL ESTIMATOR
-        # ==========================================================
-        advanced_structures = user_memory.data.get("advanced_structures", {})
+        
+        
 
-        # 1️⃣ Alimenta a memória acumulada com as estruturas da frase atual
-        for structure in structures:
-            advanced_structures[structure] = advanced_structures.get(structure, 0) + 1
+        prompt_context = prompt_builder.build(
+            conversation_analysis,
+            pedagogical,
+        )
 
-        # 2️⃣ Calcula o Score de Nível e o Nível Estimado baseando-se no histórico acumulado fresco
-        estimated_score = calculate_level_score(advanced_structures)
-        estimated_level = estimate_level(advanced_structures)
+        conversation_logger.analysis(
+            conversation_analysis,
+        )
 
-        # 3️⃣ Console Debug unificado padrão AAA
-        print(f"🎓 ADVANCED MEMORY: {advanced_structures}")
-        print(f"🎓 LEVEL SCORE: {estimated_score}")
-        print(f"🎓 ESTIMATED LEVEL: {estimated_level}")
 
-        # 4️⃣ Sobrescreve o dicionário para o SQLAlchemy disparar o update do JSON no PostgreSQL
+        debug.pedagogical.analysis(pedagogical)
+
+        
+        
+
         user_memory.data = {
             **user_memory.data,
-            "advanced_structures": advanced_structures,
-            "english_level": estimated_level,
+            "advanced_structures": pedagogical.advanced_structures,
+            "english_level": pedagogical.estimated_level,
         }
 
         db.commit()
@@ -238,174 +176,53 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             }
             for msg in history[-8:]
         ]
+        
 
-        # 1) Gerar resposta da IA
-        ai_response_dict = generate_response(messages_for_ai, user_memory.data)
+        ai_response_dict = generate_response(
+            messages_for_ai,
+            prompt_context,
+            user_memory.data,
+        )
+
         if "error" in ai_response_dict:
             return ai_response_dict
 
-        # 2) Rodar o Routing Sanitizer (FASE 12.8)
-        #target_skill = ai_response_dict.get("target_skill")
-        legacy_target_skill = ai_response_dict.get("target_skill")
-
-        target_skill = new_target_skill or legacy_target_skill
-        print()
-        print("=" * 60)
-        print("⚖️ TARGET SKILL MIGRATION")
-        print("=" * 60)
-
-        print(f"Legacy Target Skill : {legacy_target_skill}")
-        print(f"New Current Focus   : {new_target_skill}")
-        print(f"Using               : {target_skill}")
-
-        print("=" * 60)
-        print()
-        correction_text = ai_response_dict.get("correction", "")
-        teacher_action = ai_response_dict.get("teacher_action", "")
-        needs_correction = ai_response_dict.get("needs_correction", False)
-        detected_skill = ai_response_dict.get("detected_skill")
+        # Sincroniza a resposta inicial da IA para o objeto pedagógico
+        pedagogical.load_ai_response(ai_response_dict)
 
         # ----------------------------------------------------------
-        # FASE 12.8 — separar:
-        # A) erro real de inglês
-        # B) erro da skill-alvo
-        # C) erro real fora da skill-alvo + fallback de skill
+        # SANITIZER (Valida e aplica Shadow Mode de erros internamente)
         # ----------------------------------------------------------
-        sanitizer_analysis = analyze_correction_validity(
-            user_text=user_text,
-            correction=correction_text,
-            teacher_action=teacher_action,
-            needs_correction=needs_correction,
-            target_skill=target_skill,
-            detected_skill=detected_skill,
-        )
-
-        has_any_real_error = sanitizer_analysis["is_real_error"]
-        sanitizer_reason = sanitizer_analysis["reason"]
-
-        initial_target_skill_error = is_real_correction_by_skill(
-            correction=correction_text,
-            target_skill=target_skill,
-        )
-
-        fallback_skill = None
-
-        if has_any_real_error and not initial_target_skill_error and not detected_skill:
-            fallback_skill = detect_non_target_skill(user_text, correction_text)
-
-        if fallback_skill:
-            ai_response_dict["detected_skill"] = fallback_skill
-
-        if has_any_real_error and not initial_target_skill_error and fallback_skill:
-            sanitizer_reason = f"real_non_target_error:{fallback_skill}"
-
-        # 🔥 Sincroniza detected_skill com o estado final do dict
-        detected_skill = ai_response_dict.get("detected_skill")
-
-        print("======== ROUTING SANITIZER DEBUG ========")
-        print(f"USER TEXT:               {user_text}")
-        print(f"CORRECTION TEXT:         {correction_text}")
-        print(f"TEACHER ACTION:          {teacher_action}")
-        print(f"NEEDS CORRECTION:        {needs_correction}")
-        print(f"TARGET SKILL:            {target_skill}")
-        print(f"DETECTED SKILL:          {detected_skill}")
-        print(f"FALLBACK SKILL:          {fallback_skill}")
-        print(f"SANITIZER REASON:        {sanitizer_reason}")
-        print("=========================================")
-
-        # ==========================================================
-        # CENÁRIO 1 — IA marcou correction, mas NÃO há erro real
-        # ==========================================================
-        if teacher_action == "correction" and not has_any_real_error:
-            print(f"⚠️ SANITIZER CONVERTED TO SUCCESS -> reason={sanitizer_reason}")
+        # Centraliza toda a validação pedagógica e sincroniza
+        # o estado final da interação antes da atualização da memória.
+        pedagogical_sanitizer.sanitize(
+            pedagogical,
+            user_text,
+            ai_response_dict,
             
-            ai_response_dict["teacher_action"] = "chat"
-            ai_response_dict["needs_correction"] = False
-            ai_response_dict["correction"] = "Correct! ✨"
-            ai_response_dict["conversation_reply"] = "Correct! ✨"
-            ai_response_dict["detected_skill"] = None
-
-        # ==========================================================
-        # CENÁRIO 2 — existe erro real, mas NÃO é da skill-alvo
-        # Usa o snapshot inicial estável pré-sanitização
-        # ==========================================================
-        elif (
-            teacher_action == "correction"
-            and has_any_real_error
-            and not initial_target_skill_error
-        ):
-            print(
-                f"🟡 REAL ERROR OUTSIDE TARGET SKILL -> keeping correction without contaminating target skill | reason={sanitizer_reason}"
-            )
-            ai_response_dict["teacher_action"] = "correction"
-            ai_response_dict["needs_correction"] = True
-
-            if not ai_response_dict.get("detected_skill"):
-                ai_response_dict["detected_skill"] = "other_skill"
-
-        # ==========================================================
-        # CENÁRIO 3 — erro real da skill-alvo
-        # ==========================================================
-        else:
-            print(f"✅ ROUTING KEPT AS-IS -> reason={sanitizer_reason}")
-
-        # 3) Recalcular variáveis finais com base na decisão sanitizada
-        teacher_action = ai_response_dict.get("teacher_action", "")
-        needs_correction = ai_response_dict.get("needs_correction", False)
-        correction_text = ai_response_dict.get("correction", "")
-        detected_skill = ai_response_dict.get("detected_skill")
-
-        # had_error = houve erro real de inglês
-        had_error = is_real_english_error(
-            user_text=user_text,
-            correction=correction_text,
-            teacher_action=teacher_action,
-            needs_correction=needs_correction,
-            target_skill=target_skill,
-            detected_skill=detected_skill,
         )
+
+        
+
+        
+
+        
 
         # ==========================================================
         # SHADOW MODE: Validação da Migração de Erros
         # ==========================================================
-        legacy_had_error = had_error
-        new_had_error = bool(analysis.errors)
-
-        print()
-        print("=" * 60)
-        print("⚖️ ERROR MIGRATION")
-        print("=" * 60)
-        print(f"Legacy Error : {legacy_had_error}")
-        print(f"Grammar      : {new_had_error}")
-        print("=" * 60)
-
-        # target_skill_error = erro real pertence à skill-alvo (recalculado pós-sanitizer)
-        target_skill_error = (
-            teacher_action == "correction"
-            and needs_correction
-            and is_real_correction_by_skill(
-                correction=correction_text,
-                target_skill=target_skill,
-            )
+        debug.migration.error(
+            legacy_error=pedagogical.had_error,
+            grammar_error=analysis.has_errors,
         )
 
-
-        print("========== TARGET SKILL CHECK ==========")
-        print(f"TARGET SKILL: {target_skill}")
-        print(f"DETECTED SKILL: {detected_skill}")
-        print(f"CORRECTION: {correction_text}")
-        print(f"TARGET SKILL ERROR: {target_skill_error}")
-        print("========================================")
-
-        print("======== FINAL SANITIZED STATE ========")
-        print(f"FINAL TEACHER_ACTION:     {teacher_action}")
-        print(f"FINAL NEEDS_CORRECTION:   {needs_correction}")
-        print(f"FINAL CORRECTION:         {correction_text}")
-        print(f"FINAL DETECTED_SKILL:     {detected_skill}")
-        print(f"FINAL HAD_ERROR:          {had_error}")
-        print(f"FINAL TARGET_SKILL_ERR:   {target_skill_error}")
-        print(f"FINAL SANITIZER_REASON:   {sanitizer_reason}")
-        print("=======================================")
+        # Logs simplificados consumindo diretamente o estado encapsulado do objeto
+        debug.skill.resolution(
+            pedagogical,
+            )
+        debug.sanitizer.final(
+            pedagogical,
+        )
 
         # 4) Só agora salvar a resposta da IA de forma segura no Banco de Dados
         ai_message = Message(
@@ -416,7 +233,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         db.add(ai_message)
         db.commit()
 
-        # Atualiza a memória de erros/skills tradicional do app
+        # Atualiza a memória de erros/skills tradicional do app usando o objeto unificado
         update_memory_from_message(
             db=db,
             user_id=request.user_id,
@@ -425,9 +242,9 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             exercise=ai_response_dict.get("exercise", ""),
             teacher_action=ai_response_dict.get("teacher_action", "chat"),
             detected_skill=ai_response_dict.get("detected_skill"),
-            target_skill=target_skill,
-            had_error=had_error,
-            target_skill_error=target_skill_error,
+            target_skill=pedagogical.target_skill,
+            had_error=pedagogical.had_error,
+            target_skill_error=pedagogical.target_skill_error,
         )
 
         # Sincroniza a memória final para o retorno da API

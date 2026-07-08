@@ -302,6 +302,51 @@ class GrammarAnalysis:
             return None
 
         return self.learning_profile.current_focus
+    
+    @property
+    def accuracy(self) -> float:
+        """
+        Accuracy geral do aluno.
+        """
+        if not self.has_learning_profile:
+            return 0.0
+
+        return self.learning_profile.overall_accuracy
+
+
+    @property
+    def weak_skills(self) -> list[str]:
+        """
+        Lista de habilidades fracas.
+        """
+        if not self.has_learning_profile:
+            return []
+
+        return self.learning_profile.weak_skills
+
+
+    @property
+    def mastered_skills(self) -> list[str]:
+        """
+        Lista de habilidades dominadas.
+        """
+        if not self.has_learning_profile:
+            return []
+
+        return self.learning_profile.mastered_skills
+
+
+    @property
+    def learning_summary(self) -> dict:
+        """
+        Resumo da aprendizagem do aluno.
+        """
+        return {
+            "focus": self.current_focus,
+            "accuracy": self.accuracy,
+            "weak_skills": self.weak_skills,
+            "mastered_skills": self.mastered_skills,
+        }
 
     # ==========================================================
     # Lesson API
