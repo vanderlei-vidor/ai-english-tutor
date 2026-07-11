@@ -410,18 +410,7 @@ Checkpoint:
 - Menos de uma fonte decide `target_skill`.
 - Logs continuam explicando a decisao final.
 
-## Ordem Recomendada De Implementacao
 
-1. Finalizar testes do sanitizer e Teacher atual.
-2. Completar `teacher/decision/*`.
-3. Completar `teacher/strategies/*`.
-4. Completar `teacher/teaching/*`.
-5. Completar `teacher/exercise/*`.
-6. Completar `teacher/curriculum/*`.
-7. Completar `teacher/memory/*`.
-8. Completar `teacher/personality/*`.
-9. Migrar `generate_response` para executor.
-10. Remover legado com testes passando.
 
 ## Visao Final
 

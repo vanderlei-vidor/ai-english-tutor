@@ -2,16 +2,25 @@ from __future__ import annotations
 
 from app.services.teacher.context import TeacherContext
 
-from app.services.teacher.decision.engine import (
-    teacher_decision_engine,
+from app.services.teacher.decision.teacher_execution_engine import (
+    teacher_execution_engine,
 )
 
 from app.services.teacher.registry import (
     teacher_registry,
 )
 
-from app.services.teacher.models import (
-    TeacherDecision,
+from app.services.teacher.result import (
+    TeacherResult,
+)
+from app.services.teacher.logger import (
+    teacher_logger,
+)
+from app.services.teacher.brain.engine import (
+    teacher_brain,
+)
+from app.services.teacher.lesson.manager import (
+    lesson_manager,
 )
 
 
@@ -36,10 +45,22 @@ class TeacherEngine:
     def decide(
         self,
         context: TeacherContext,
-    ) -> TeacherDecision:
+    ) -> TeacherResult:
+        
+        
 
-        decision = teacher_decision_engine.decide(
+
+        brain_state = teacher_brain.think(
             context,
+        )
+
+        teacher_logger.brain(
+            brain_state,
+        )
+
+        decision = teacher_execution_engine.decide(
+            context=context,
+            action_plan=brain_state.planning,
         )
 
         strategy = teacher_registry.select(
@@ -48,9 +69,12 @@ class TeacherEngine:
         )
 
         teacher_decision = strategy.build(
-            context.grammar,
-            context.pedagogical,
+            brain_state,
         )
+
+        
+
+
 
         print()
         print("=" * 60)
@@ -60,7 +84,17 @@ class TeacherEngine:
         print(f"Strategy: {strategy.__class__.__name__}")
         print("=" * 60)
 
-        return teacher_decision
+        lesson_manager.set_last_action(
+            brain_state.planning.action,
+        )
+
+        
+
+        lesson_manager.advance()
+
+        return TeacherResult(
+            brain=brain_state,
+        )
 
 
 teacher_engine = TeacherEngine()

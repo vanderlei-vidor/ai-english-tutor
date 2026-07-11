@@ -2,11 +2,22 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from app.services.teacher.models import TeacherDecision
-from app.services.pedagogical.analysis import PedagogicalAnalysis
+from app.services.teacher.models import (
+    TeacherDecision,
+)
+
+from app.services.teacher.brain.state import (
+    TeacherBrainState,
+)
+
+from app.services.pedagogical.analysis import (
+    PedagogicalAnalysis,
+)
+
 from app.services.grammar_engine.models import (
     GrammarAnalysis,
 )
+
 
 class TeacherStrategy(ABC):
     @abstractmethod
@@ -19,6 +30,5 @@ class TeacherStrategy(ABC):
     @abstractmethod
     def build(
         self,
-        grammar: GrammarAnalysis,
-        pedagogical: PedagogicalAnalysis,
+        brain_state: TeacherBrainState,
     ) -> TeacherDecision: ...

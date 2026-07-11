@@ -19,7 +19,9 @@ from app.services.personalized_learning_engine import get_weakest_skill
 from app.services.prompt_builder.static.builder import (
     static_prompt_builder,
 )
-
+from app.services.teacher.response.executor import (
+    teacher_response_executor,
+)
 
 load_dotenv()
 
@@ -175,7 +177,9 @@ def resolve_final_teacher_action(
 # ==========================================
 # MAIN RESPONSE ENGINE
 # ==========================================
-def generate_response(messages: list, prompt_context, memory_data: dict) -> dict:
+def generate_response(
+    messages: list, prompt_context, teacher_result, memory_data: dict
+) -> dict:
     conversation_turns = memory_data.get("conversation_turns", 0)
     messages_since_last_teaching = memory_data.get("messages_since_last_teaching", 5)
 
@@ -423,12 +427,22 @@ Exercise Required Right Now: {"YES" if exercise_required else "NO"}
                     "That sounds cool! Tell me more about that."
                 )
 
+        response_json = teacher_response_executor.execute(
+            brain=teacher_result.brain,
+            response_json=response_json,
+        )
+
+        
+
         final_action = resolve_final_teacher_action(
             response_json=response_json,
             known_error=known_error,
             allowed_mode=allowed_mode,
             backend_wants_teaching=backend_wants_teaching,
         )
+
+        
+
         response_json["teacher_action"] = final_action
 
         print("\n=== FINAL BACKEND DECISION ===")

@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from app.services.conversation.analysis import (
-    ConversationAnalysis,
-)
 
 from app.services.pedagogical.analysis import (
     PedagogicalAnalysis,
@@ -10,6 +7,9 @@ from app.services.pedagogical.analysis import (
 
 from app.services.prompt_builder.context import (
     PromptContext,
+)
+from app.services.teacher.brain.state import (
+    TeacherBrainState,
 )
 from app.services.prompt_builder.static.base_prompt import (
     SYSTEM_INSTRUCTION,
@@ -29,19 +29,21 @@ class PromptBuilder:
 
     def build(
         self,
-        conversation_analysis: ConversationAnalysis,
+        brain: TeacherBrainState,
         pedagogical: PedagogicalAnalysis,
     ) -> PromptContext:
 
+        action_plan = brain.planning
+
         return PromptContext(
-            teacher_strategy=conversation_analysis.teacher_strategy,
-            teacher_action=conversation_analysis.teacher_action,
-            teacher_reason=conversation_analysis.teacher_reason,
-            explanation_level=conversation_analysis.explanation_level,
-            confidence=conversation_analysis.confidence,
-            should_teach=conversation_analysis.should_teach,
-            should_review=conversation_analysis.should_review,
-            should_exercise=conversation_analysis.should_exercise,
+            teacher_strategy=action_plan.teaching_mode,
+            teacher_action=action_plan.action,
+            teacher_reason=action_plan.teacher_reason,
+            explanation_level=action_plan.explanation_level,
+            confidence=action_plan.confidence,
+            should_teach=action_plan.should_teach,
+            should_review=action_plan.should_review,
+            should_exercise=action_plan.should_exercise,
             english_level=pedagogical.estimated_level,
             target_skill=pedagogical.target_skill,
             detected_skill=pedagogical.detected_skill,

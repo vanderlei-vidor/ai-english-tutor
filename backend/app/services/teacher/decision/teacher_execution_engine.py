@@ -9,23 +9,28 @@ from app.services.teacher.models import (
     TeacherIntent,
 )
 
+from app.services.teacher.brain.models import (
+    TeacherActionPlan,
+)
 
-class TeacherDecisionEngine:
+
+class TeacherExecutionEngine:
     def decide(
         self,
         context: TeacherContext,
+        action_plan: TeacherActionPlan,
     ) -> TeacherDecision:
 
-        if context.grammar.has_errors:
+        if action_plan.goal == "teach":
             return TeacherDecision(
                 intent=TeacherIntent.CORRECT,
-                priority=100,
+                priority=action_plan.teaching_priority,
             )
 
         return TeacherDecision(
             intent=TeacherIntent.CONVERSATION,
-            priority=10,
+            priority=action_plan.teaching_priority,
         )
 
 
-teacher_decision_engine = TeacherDecisionEngine()
+teacher_execution_engine = TeacherExecutionEngine()

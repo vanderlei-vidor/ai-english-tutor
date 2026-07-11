@@ -7,9 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models.chat_schemas import ChatRequest
-from app.services.conversation.analysis import (
-    ConversationAnalysis,
-)
+
 from app.models.message import Message
 from app.models.progress import Progress
 from app.models.streak import Streak
@@ -36,26 +34,13 @@ from app.services.prompt_builder.builder import (
     prompt_builder,
 )
 
-from app.services.prompt_builder.logger import (
-    prompt_builder_logger,
-)
 from app.models.conversation import Conversation
 
-from app.services.prompt_builder.composer import (
-    prompt_composer,
-)
 from app.services.teacher.engine import (
     teacher_engine,
 )
-from app.services.teacher.logger import (
-    teacher_logger,
-)
-from app.services.conversation.engine import (
-    conversation_engine,
-)
-from app.services.conversation.logger import (
-    conversation_logger,
-)
+
+
 from app.services.teacher.context import (
     TeacherContext,
 )
@@ -129,29 +114,29 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             pedagogical=pedagogical,
         )
 
-        teacher_decision = teacher_engine.decide(
+        teacher_result = teacher_engine.decide(
             teacher_context,
         )
 
-        conversation_analysis = conversation_engine.analyze(
-            pedagogical=pedagogical,
-            teacher_decision=teacher_decision,
-        )
-        teacher_logger.decision(
-            teacher_decision,
-        )
+        brain_state = teacher_result.brain
 
-        
-        
+        #conversation_analysis = teacher_result.conversation
+
+        print()
+        print("=" * 60)
+        print("BRAIN FINAL ACTION")
+        print("=" * 60)
+        print(brain_state.planning.action)
+        print("=" * 60)
 
         prompt_context = prompt_builder.build(
-            conversation_analysis,
+            teacher_result.brain,
             pedagogical,
         )
 
-        conversation_logger.analysis(
-            conversation_analysis,
-        )
+       # conversation_logger.analysis(
+        #    teacher_result.brain,
+        #)
 
 
         debug.pedagogical.analysis(pedagogical)
@@ -188,25 +173,29 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         ai_response_dict = generate_response(
             messages_for_ai,
             prompt_context,
+            teacher_result,
             user_memory.data,
         )
 
         if "error" in ai_response_dict:
             return ai_response_dict
 
-        # Sincroniza a resposta inicial da IA para o objeto pedagógico
-        pedagogical.load_ai_response(ai_response_dict)
+        # ----------------------------------------------------------
+        # Sincroniza a resposta da IA com o objeto pedagógico
+        # ----------------------------------------------------------
+
+        pedagogical.load_ai_response(
+            ai_response_dict,
+        )
 
         # ----------------------------------------------------------
-        # SANITIZER (Valida e aplica Shadow Mode de erros internamente)
+        # SANITIZER
         # ----------------------------------------------------------
-        # Centraliza toda a validação pedagógica e sincroniza
-        # o estado final da interação antes da atualização da memória.
+
         pedagogical_sanitizer.sanitize(
             pedagogical,
             user_text,
             ai_response_dict,
-            
         )
 
         
