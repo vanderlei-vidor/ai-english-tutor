@@ -5,6 +5,14 @@ from .models import (
     TeacherReflection,
 )
 
+from app.services.teacher.lesson.manager import (
+    lesson_manager,
+)
+
+from app.services.teacher.policies.engine import (
+    teacher_policy_engine,
+)
+
 
 class TeacherReflectionEngine:
     def reflect(
@@ -14,16 +22,32 @@ class TeacherReflectionEngine:
 
         reflection = TeacherReflection()
 
-        if perception.has_error:
-            reflection.should_interrupt = True
+        lesson = lesson_manager.current()
 
-            reflection.teaching_reason = "Grammar error detected."
+        policy_result = teacher_policy_engine.evaluate(
+            perception=perception,
+            lesson=lesson,
+        )
 
-            return reflection
+        # -----------------------------------------
+        # Decisions produced by Policies
+        # -----------------------------------------
+
+        reflection.should_interrupt = policy_result.should_interrupt or False
+
+        reflection.should_review = policy_result.should_review or False
+
+        reflection.interruption_level = policy_result.interruption_level or "none"
+
+        reflection.teaching_reason = policy_result.reason
+
+        # -----------------------------------------
+        # Defaults (temporários)
+        # -----------------------------------------
 
         reflection.should_continue_lesson = False
 
-        reflection.teaching_reason = "Natural conversation."
+        reflection.should_start_new_lesson = False
 
         return reflection
 

@@ -46,6 +46,8 @@ class TeacherReflection:
 
     teaching_reason: str = ""
 
+    interruption_level: str = "none"
+
 
 @dataclass(slots=True)
 class TeacherActionPlan:

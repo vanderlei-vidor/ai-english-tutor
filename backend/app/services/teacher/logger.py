@@ -14,6 +14,7 @@ class TeacherLogger:
     ):
         perception = brain_state.perception
         reflection = brain_state.reflection
+        
         plan = brain_state.planning
         lesson = brain_state.lesson
 
@@ -51,6 +52,11 @@ class TeacherLogger:
         print(f"START NEW LESSON:     {reflection.should_start_new_lesson}")
         print(f"REVIEW:               {reflection.should_review}")
         print(f"REASON:               {reflection.teaching_reason}")
+        print(
+        f"INTERRUPTION LEVEL:   {reflection.interruption_level}"
+        )
+       
+
 
         # ------------------------------------------------------
         # PLANNING
