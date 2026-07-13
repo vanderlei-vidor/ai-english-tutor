@@ -36,8 +36,6 @@ class TeacherReflection:
     Apenas pensamento.
     """
 
-    should_interrupt: bool = False
-
     should_continue_lesson: bool = False
 
     should_start_new_lesson: bool = False

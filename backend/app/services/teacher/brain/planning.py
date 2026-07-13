@@ -16,7 +16,8 @@ class TeacherPlanningEngine:
 
         plan = TeacherActionPlan()
 
-        if reflection.should_interrupt:
+        if reflection.interruption_level == "high":
+            
             self._apply_teaching_plan(
                 plan,
                 perception,

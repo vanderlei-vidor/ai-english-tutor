@@ -33,11 +33,13 @@ class TeacherReflectionEngine:
         # Decisions produced by Policies
         # -----------------------------------------
 
-        reflection.should_interrupt = policy_result.should_interrupt or False
+        reflection.interruption_level = policy_result.interruption_level or "none"
+
+        reflection.should_continue_lesson = False
+
+        reflection.should_start_new_lesson = False
 
         reflection.should_review = policy_result.should_review or False
-
-        reflection.interruption_level = policy_result.interruption_level or "none"
 
         reflection.teaching_reason = policy_result.reason
 
@@ -45,9 +47,9 @@ class TeacherReflectionEngine:
         # Defaults (temporários)
         # -----------------------------------------
 
-        reflection.should_continue_lesson = False
+       
 
-        reflection.should_start_new_lesson = False
+        
 
         return reflection
 

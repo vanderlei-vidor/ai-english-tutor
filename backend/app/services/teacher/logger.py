@@ -47,7 +47,6 @@ class TeacherLogger:
         print("REFLECTION")
         print("-" * 60)
 
-        print(f"INTERRUPT:            {reflection.should_interrupt}")
         print(f"CONTINUE LESSON:      {reflection.should_continue_lesson}")
         print(f"START NEW LESSON:     {reflection.should_start_new_lesson}")
         print(f"REVIEW:               {reflection.should_review}")
