@@ -13,7 +13,9 @@ from .models import (
 from app.services.teacher.lesson.models import (
     LessonState,
 )
-
+from app.services.teacher.prompt.models import (
+    TeacherPrompt,
+)
 
 @dataclass(slots=True)
 class TeacherBrainState:
@@ -32,3 +34,5 @@ class TeacherBrainState:
     lesson: LessonState
     
     response: TeacherResponsePlan
+
+    prompt: TeacherPrompt

@@ -20,6 +20,9 @@ from app.services.teacher.lesson.manager import (
 from app.services.teacher.response.planner import (
     teacher_response_planner,
 )
+from app.services.teacher.prompt.builder import (
+    teacher_prompt_builder,
+)
 
 class TeacherBrain:
     """
@@ -56,12 +59,17 @@ class TeacherBrain:
             plan,
         )
 
-        plan = teacher_planning_engine.apply_lesson_phase(
-            plan,
-            lesson,
-        )
+        if lesson.active:
+
+            plan = teacher_planning_engine.apply_lesson_phase(
+                plan,
+                lesson,
+            )
 
         response = teacher_response_planner.create_response_plan(
+            plan,
+        )
+        teacher_prompt = teacher_prompt_builder.build(
             plan,
         )
 
@@ -71,6 +79,7 @@ class TeacherBrain:
             planning=plan,
             lesson=lesson,
             response=response,
+            prompt=teacher_prompt,
         )
 
 

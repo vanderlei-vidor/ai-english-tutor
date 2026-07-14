@@ -11,15 +11,30 @@ class TeacherPerceptionEngine:
 
         perception = TeacherPerception()
 
-        perception.has_error = context.grammar.has_errors
+        has_grammar_error = context.grammar.has_errors
+        known_error = context.known_error
 
-        perception.detected_skill = (
-            context.grammar.primary_error.skill
-            if context.grammar.primary_error
-            else None
-        )
+        perception.has_error = has_grammar_error or known_error is not None
 
-        perception.target_skill = context.pedagogical.target_skill
+        if has_grammar_error:
+            perception.detected_skill = (
+                context.grammar.primary_error.skill
+                if context.grammar.primary_error
+                else None
+            )
+        elif known_error:
+            perception.detected_skill = known_error.get("skill")
+        else:
+            perception.detected_skill = None
+
+        if has_grammar_error:
+            perception.target_skill = context.pedagogical.target_skill
+        elif known_error:
+            perception.target_skill = (
+                known_error.get("skill") or context.pedagogical.target_skill
+            )
+        else:
+            perception.target_skill = context.pedagogical.target_skill
 
         perception.current_focus = context.grammar.current_focus
 

@@ -26,10 +26,6 @@ class ConversationStrategy(TeacherStrategy):
     def build(
         self,
         brain_state: TeacherBrainState,
-    ) -> TeacherDecision:
+    ) -> None:
 
-        return TeacherDecision(
-            intent=TeacherIntent.CONVERSATION,
-            priority=10,
-            confidence=1.0,
-        )
+        pass

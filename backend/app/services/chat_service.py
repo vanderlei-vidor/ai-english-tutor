@@ -139,46 +139,272 @@ def _generate_backend_fallback(
     )
 
 
-# ==========================================
-# PASSO 1 — Criar o Resolver (Juiz Final)
-# ==========================================
-def resolve_final_teacher_action(
-    response_json: dict,
-    known_error: dict | None,
-    allowed_mode: str,
-    backend_wants_teaching: bool,
+def _build_memory_context(
+    allowed_mode,
+    exercise_focus,
+    exercise_type,
+    theme,
+    english_level,
+    memory_data,
+    exercise_required,
 ) -> str:
-    """
-    Juiz final do sistema pedagógico.
-    Somente esta função decide a ação final.
-    """
-    if known_error:
-        return "correction"
+    return f"""
+### DYNAMIC USER CONTEXT ###
+ALLOWED TEACHING MODE FOR THIS TURN: {allowed_mode} (Strictly obey this directive!)
+MANDATORY TARGET SKILL TO TRAIN: {exercise_focus}
+Exercise Format Required: {exercise_type}
+Exercise Theme: {theme}
+User English Level: {english_level}
+Conversation Style: {memory_data.get("conversation_style", "casual")}
+Exercise Required Right Now: {"YES" if exercise_required else "NO"}
+"""
 
-    if response_json.get("needs_correction"):
-        return "correction"
 
-    if allowed_mode == "chat":
-        return "chat"
+def _build_system_prompt(
+    dynamic_prompt,
+    memory_context,
+) -> str:
+    return (
+        static_prompt_builder.build()
+        + "\n\n"
+        + dynamic_prompt
+        + "\n\n"
+        + memory_context
+    )
 
-    if backend_wants_teaching:
-        ai_action = response_json.get("teacher_action")
-        if ai_action == "exercise":
-            return "exercise"
-        return "question"
 
-    ai_action = response_json.get("teacher_action", "chat")
-    if ai_action in ["question", "exercise"]:
-        return ai_action
+def _call_llm(full_messages) -> str:
+    payload = {
+        "model": MODEL_NAME,
+        "messages": full_messages,
+        "temperature": 0.2,
+        "max_tokens": 600,
+    }
 
-    return "chat"
+    try:
+        print("=== SENDING TO LM STUDIO ===")
+        start_time = time.time()
+        response = requests.post(LM_STUDIO_URL, json=payload, timeout=45)
+        response.raise_for_status()
+        print(f"LM STUDIO RESPONSE TIME: {time.time() - start_time:.2f}s")
+
+        return response.json()["choices"][0]["message"]["content"].strip()
+
+    except Exception as e:
+        print(f"❌ Erro de requisição no LM Studio: {str(e)}")
+        raise
+
+
+def _parse_response_json(raw_text) -> dict:
+    cleaned_text = re.sub(r",\s*}", "}", raw_text)
+    cleaned_text = re.sub(r",\s*]", "]", cleaned_text)
+
+    if cleaned_text != raw_text:
+        print("JSON AUTO-REPAIRED (Regex Rule)")
+
+    return json.loads(cleaned_text)
+
+
+def _apply_known_error_detection(
+    response_json,
+    messages,
+) -> dict:
+
+    known_error = detect_known_error(
+        messages[-1]["content"],
+    )
+
+    print(f"KNOWN ERROR RESULT: {known_error}")
+
+    if not known_error:
+        return response_json
+
+    print(f"🎯 ERROR PATTERN DETECTED -> {known_error['skill']}")
+
+    response_json["detected_skill"] = known_error["skill"]
+
+    response_json["needs_correction"] = True
+
+    response_json["correction"] = known_error["correction"]
+
+    response_json["explanation_pt"] = known_error["explanation"]
+
+    return response_json
+
+
+def _apply_correction_guardrails(
+    response_json,
+    messages,
+    pedagogical,
+) -> dict:
+    confidence = response_json.get("grammar_confidence", 1.0)
+    needs_correction = response_json.get("needs_correction", False)
+
+    original_correction = response_json.get("correction", "")
+
+    response_json["correction"] = validate_correction(
+        original_correction,
+        needs_correction,
+    )
+
+    validated_correction = response_json.get("correction", "")
+
+    if is_invalid_correction(validated_correction):
+        print("⚠️ INVALID CORRECTION FORMAT DETECTED")
+        response_json["correction"] = ""
+
+    if response_json.get("needs_correction") and not response_json.get("correction"):
+        if response_json.get("example"):
+            response_json["correction"] = response_json["example"]
+
+    bad_corrections = [
+        "you're close",
+        "good try",
+        "small mistake",
+        "change",
+        "past tense",
+        "try again",
+        "almost",
+    ]
+    correction_lower = response_json.get("correction", "").lower()
+    if any(bad in correction_lower for bad in bad_corrections):
+        print("⚠️ INVALID CORRECTION DETECTED")
+        response_json["correction"] = ""
+
+    user_msg_clean = messages[-1]["content"].strip().lower() if messages else ""
+    special_corrections = {
+        "talk english": "I speak English.",
+        "talk english with": "I speak English.",
+        "talk english at": "I speak English.",
+    }
+    for trigger, fixed_form in special_corrections.items():
+        if trigger in user_msg_clean:
+            print(f"🎯 SPECIAL CORRECTION TRIGGERED FOR SUBSTRING: '{trigger}'")
+            response_json["needs_correction"] = True
+            response_json["correction"] = fixed_form
+            break
+
+    special_explanations = {
+        "talk english": "Em inglês usamos 'speak English', não 'talk English'.",
+        "she don't": "Na terceira pessoa usamos 'doesn't', não 'don't'.",
+        "go yesterday": "Após marcadores de passado como 'yesterday', usamos o verbo no passado.",
+    }
+    for trigger, explanation in special_explanations.items():
+        if trigger in user_msg_clean:
+            response_json["explanation_pt"] = explanation
+            print(f"🎯 SPECIAL EXPLANATION TRIGGERED FOR SUBSTRING: '{trigger}'")
+            break
+
+    confidence = response_json.get("grammar_confidence", 1.0)
+    needs_correction = response_json.get("needs_correction", False)
+
+    if confidence > 0.95 and not needs_correction:
+        response_json["needs_correction"] = False
+        response_json["correction"] = "Correct! ✨"
+        response_json["explanation_pt"] = (
+            "Sua frase está totalmente correta! Excelente trabalho. 🥳"
+        )
+        response_json["example"] = ""
+
+    if (
+        not response_json.get("conversation_reply")
+        or "keep practicing" in response_json.get("conversation_reply").lower()
+    ):
+        if pedagogical["theme"] == "anime":
+            response_json["conversation_reply"] = (
+                "That's awesome! By the way, who is your favorite anime character?"
+            )
+        else:
+            response_json["conversation_reply"] = (
+                "That sounds cool! Tell me more about that."
+            )
+
+    return response_json
+
+
+def _apply_teacher_action(
+    response_json,
+    teacher_result,
+) -> tuple[dict, str]:
+    response_json = teacher_response_executor.execute(
+        brain=teacher_result.brain,
+        response_json=response_json,
+    )
+
+    response_json["teacher_action"] = teacher_result.brain.planning.action
+    teacher_action = teacher_result.brain.planning.action
+
+    print()
+    print("=" * 60)
+    print("TEACHER FINAL DECISION")
+    print("=" * 60)
+
+    print(f"ACTION: {teacher_result.brain.planning.action}")
+    print(f"MODE: {teacher_result.brain.planning.teaching_mode}")
+    print(f"REASON: {teacher_result.brain.planning.teacher_reason}")
+
+    print("=" * 60)
+
+    return response_json, teacher_action
+
+
+def _generate_exercise(
+    response_json,
+    teacher_action,
+    exercise_focus,
+    exercise_type,
+    memory_data,
+) -> dict:
+    if teacher_action == "chat":
+        response_json["exercise"] = ""
+
+    elif teacher_action == "correction":
+        response_json["exercise"] = ""
+
+    elif teacher_action == "exercise":
+        print(f"🎯 SKILL EXERCISE ENGINE ACTIVATED FOR EXERCISE -> {exercise_focus}")
+
+        # 1. Extração unificada dos níveis para o log
+        memory_level = memory_data.get("english_level", "A2")
+        advanced_structures = memory_data.get("advanced_structures", {})
+        estimated_level = estimate_level(advanced_structures)
+        adaptive_level = estimated_level
+
+        # 🎓 Prints de telemetria
+        print(f"🎓 MEMORY LEVEL: {memory_level}")
+        print(f"🎓 ESTIMATED LEVEL: {estimated_level}")
+        print(f"🎓 ADAPTIVE LEVEL USED: {adaptive_level}")
+        print("==================================================\n")
+
+        # Invocação da engine com o nível dinâmico mapeado
+        response_json["exercise"] = get_skill_specific_exercise(
+            skill=exercise_focus, level=adaptive_level, exercise_type=exercise_type
+        )
+        print(f"🎯 ADAPTIVE EXERCISE GENERATED: {response_json['exercise']}")
+
+    elif teacher_action == "question":
+        # 🎓 MUDANÇA 1 & 3: Limpeza completa do bloco morto redundante e remoção de imports duplicados
+        advanced_structures = memory_data.get("advanced_structures", {})
+        adaptive_level = estimate_level(advanced_structures)
+
+        # 🎓 MUDANÇA 2: Corrigido o motor adaptativo para passar 'adaptive_level' em vez de 'english_level'
+        response_json["exercise"] = get_skill_specific_exercise(
+            skill=exercise_focus,
+            level=adaptive_level,
+            exercise_type=exercise_type,
+        )
+        print(
+            f"🎯 ADAPTIVE EXERCISE GENERATED (IN QUESTION MODE): {response_json['exercise']}"
+        )
+
+    return response_json
 
 
 # ==========================================
 # MAIN RESPONSE ENGINE
 # ==========================================
-def generate_response(
-    messages: list, prompt_context, teacher_result, memory_data: dict
+def _prepare_pedagogical_context(
+    memory_data,
 ) -> dict:
     conversation_turns = memory_data.get("conversation_turns", 0)
     messages_since_last_teaching = memory_data.get("messages_since_last_teaching", 5)
@@ -193,22 +419,15 @@ def generate_response(
 
     weak_skills = memory_data.get("weak_skills", {})
 
-    from app.services.weighted_teaching_engine import (
-    choose_teaching_skill
-    )
+    from app.services.weighted_teaching_engine import choose_teaching_skill
 
-    exercise_focus = choose_teaching_skill(
-    memory_data
-    )
-
-
+    exercise_focus = choose_teaching_skill(memory_data)
 
     top_weak_skills = get_top_errors(
         weak_skills if isinstance(weak_skills, dict) else {}
     )
     top_errors = get_top_errors(memory_data.get("common_errors", {}))
 
-    
     exercise_type = choose_exercise_type(memory_data)
 
     weakness_score = weak_skills.get(exercise_focus, 0)
@@ -255,31 +474,39 @@ def generate_response(
     print(f"BACKEND WANTS TEACHING: {backend_wants_teaching}")
     print("=================================\n")
 
-    memory_context = f"""
-### DYNAMIC USER CONTEXT ###
-ALLOWED TEACHING MODE FOR THIS TURN: {allowed_mode} (Strictly obey this directive!)
-MANDATORY TARGET SKILL TO TRAIN: {exercise_focus}
-Exercise Format Required: {exercise_type}
-Exercise Theme: {theme}
-User English Level: {english_level}
-Conversation Style: {memory_data.get("conversation_style", "casual")}
-Exercise Required Right Now: {"YES" if exercise_required else "NO"}
-"""
-    
-    from app.services.prompt_builder.composer import (
-        prompt_composer,
-    )
-    
-    dynamic_prompt = prompt_composer.compose(
-    prompt_context,
-)
+    return {
+        "allowed_mode": allowed_mode,
+        "exercise_focus": exercise_focus,
+        "exercise_type": exercise_type,
+        "theme": theme,
+        "english_level": english_level,
+        "exercise_required": exercise_required,
+        "backend_wants_teaching": backend_wants_teaching,
+    }
 
-    system_prompt = (
-        static_prompt_builder.build()
-        + "\n\n"
-        + dynamic_prompt
-        + "\n\n"
-        + memory_context
+
+def generate_response(
+    messages: list, prompt_context, teacher_result, memory_data: dict
+) -> dict:
+    pedagogical = _prepare_pedagogical_context(memory_data)
+
+    memory_context = _build_memory_context(
+        allowed_mode=pedagogical["allowed_mode"],
+        exercise_focus=pedagogical["exercise_focus"],
+        exercise_type=pedagogical["exercise_type"],
+        theme=pedagogical["theme"],
+        english_level=pedagogical["english_level"],
+        memory_data=memory_data,
+        exercise_required=pedagogical["exercise_required"],
+    )
+
+    from app.services.prompt_builder.composer import prompt_composer
+
+    dynamic_prompt = prompt_composer.compose(prompt_context)
+
+    system_prompt = _build_system_prompt(
+        dynamic_prompt,
+        memory_context,
     )
 
     full_messages = [
@@ -289,48 +516,23 @@ Exercise Required Right Now: {"YES" if exercise_required else "NO"}
         }
     ] + messages
 
-    payload = {
-        "model": MODEL_NAME,
-        "messages": full_messages,
-        "temperature": 0.2,
-        "max_tokens": 600,
-    }
-
     try:
-        print("=== SENDING TO LM STUDIO ===")
-        start_time = time.time()
-        response = requests.post(LM_STUDIO_URL, json=payload, timeout=45)
-        response.raise_for_status()
-        print(f"LM STUDIO RESPONSE TIME: {time.time() - start_time:.2f}s")
+        raw_text = _call_llm(
+            full_messages,
+        )
 
-        raw_text = response.json()["choices"][0]["message"]["content"].strip()
-
-        # Remove vírgulas extras antes de fechar chaves ou colchetes, mesmo com espaços/quebras de linha
-        cleaned_text = re.sub(r",\s*}", "}", raw_text)
-        cleaned_text = re.sub(r",\s*]", "]", cleaned_text)
-
-        if cleaned_text != raw_text:
-            print("⚠️ JSON AUTO-REPAIRED (Regex Rule)")
-            raw_text = cleaned_text
-
-    except Exception as e:
-        print(f"❌ Erro de requisição no LM Studio: {str(e)}")
+    except Exception:
         return _disaster_recovery_json()
 
     try:
-        response_json = json.loads(raw_text)
+        response_json = _parse_response_json(
+            raw_text,
+        )
 
-        known_error = detect_known_error(messages[-1]["content"])
-        print(f"KNOWN ERROR RESULT: {known_error}")
-
-        if known_error:
-            response_json["detected_skill"] = known_error["skill"]
-
-        if known_error:
-            print(f"🎯 ERROR PATTERN DETECTED -> {known_error['skill']}")
-            response_json["needs_correction"] = True
-            response_json["correction"] = known_error["correction"]
-            response_json["explanation_pt"] = known_error["explanation"]
+        response_json = _apply_known_error_detection(
+            response_json,
+            messages,
+        )
 
         VALID_ACTIONS = ["chat", "question", "exercise", "correction"]
         teacher_action = response_json.get("teacher_action", "chat")
@@ -339,171 +541,26 @@ Exercise Required Right Now: {"YES" if exercise_required else "NO"}
             teacher_action = "chat"
             response_json["teacher_action"] = "chat"
 
-        confidence = response_json.get("grammar_confidence", 1.0)
-        needs_correction = response_json.get("needs_correction", False)
-
-        print("\n=== AI ORIGINAL DECISION ===")
-        print(f"ACTION: {teacher_action} | CONFIDENCE: {confidence}")
-        print("============================\n")
-
-        # Guardrail de Correção
-        original_correction = response_json.get("correction", "")
-
-        response_json["correction"] = validate_correction(
-            original_correction, needs_correction
+        response_json = _apply_correction_guardrails(
+            response_json,
+            messages,
+            pedagogical,
         )
 
-        validated_correction = response_json.get("correction", "")
-
-        if is_invalid_correction(validated_correction):
-            print("⚠️ INVALID CORRECTION FORMAT DETECTED")
-            response_json["correction"] = ""
-
-        if response_json.get("needs_correction") and not response_json.get(
-            "correction"
-        ):
-            if response_json.get("example"):
-                response_json["correction"] = response_json["example"]
-
-        BAD_CORRECTIONS = [
-            "you're close",
-            "good try",
-            "small mistake",
-            "change",
-            "past tense",
-            "try again",
-            "almost",
-        ]
-        correction_lower = response_json.get("correction", "").lower()
-        if any(bad in correction_lower for bad in BAD_CORRECTIONS):
-            print("⚠️ INVALID CORRECTION DETECTED")
-            response_json["correction"] = ""
-
-        user_msg_clean = messages[-1]["content"].strip().lower() if messages else ""
-        SPECIAL_CORRECTIONS = {
-            "talk english": "I speak English.",
-            "talk english with": "I speak English.",
-            "talk english at": "I speak English.",
-        }
-        for trigger, fixed_form in SPECIAL_CORRECTIONS.items():
-            if trigger in user_msg_clean:
-                print(f"🎯 SPECIAL CORRECTION TRIGGERED FOR SUBSTRING: '{trigger}'")
-                response_json["needs_correction"] = True
-                response_json["correction"] = fixed_form
-                break
-
-        SPECIAL_EXPLANATIONS = {
-            "talk english": "Em inglês usamos 'speak English', não 'talk English'.",
-            "she don't": "Na terceira pessoa usamos 'doesn't', não 'don't'.",
-            "go yesterday": "Após marcadores de passado como 'yesterday', usamos o verbo no passado.",
-        }
-        for trigger, explanation in SPECIAL_EXPLANATIONS.items():
-            if trigger in user_msg_clean:
-                response_json["explanation_pt"] = explanation
-                print(f"🎯 SPECIAL EXPLANATION TRIGGERED FOR SUBSTRING: '{trigger}'")
-                break
-
-        confidence = response_json.get("grammar_confidence", 1.0)
-        needs_correction = response_json.get("needs_correction", False)
-
-        if confidence > 0.95 and not needs_correction:
-            response_json["needs_correction"] = False
-            response_json["correction"] = "Correct! ✨"
-            response_json["explanation_pt"] = (
-                "Sua frase está totalmente correta! Excelente trabalho. 🥳"
-            )
-            response_json["example"] = ""
-
-        if (
-            not response_json.get("conversation_reply")
-            or "keep practicing" in response_json.get("conversation_reply").lower()
-        ):
-            if theme == "anime":
-                response_json["conversation_reply"] = (
-                    "That's awesome! By the way, who is your favorite anime character?"
-                )
-            else:
-                response_json["conversation_reply"] = (
-                    "That sounds cool! Tell me more about that."
-                )
-
-        response_json = teacher_response_executor.execute(
-            brain=teacher_result.brain,
-            response_json=response_json,
+        response_json, teacher_action = _apply_teacher_action(
+            response_json,
+            teacher_result,
         )
 
-        
-
-        final_action = resolve_final_teacher_action(
-            response_json=response_json,
-            known_error=known_error,
-            allowed_mode=allowed_mode,
-            backend_wants_teaching=backend_wants_teaching,
+        response_json = _generate_exercise(
+            response_json,
+            teacher_action,
+            pedagogical["exercise_focus"],
+            pedagogical["exercise_type"],
+            memory_data,
         )
 
-        
-
-        response_json["teacher_action"] = final_action
-
-        print("\n=== FINAL BACKEND DECISION ===")
-        print(f"FINAL ACTION DETERMINED: {final_action}")
-        print("==============================\n")
-
-        # ==========================================================
-        # RESOLUÇÃO DE AÇÕES PEDAGÓGICAS — FASE 11.9 (REFATORADO)
-        # ==========================================================
-        if final_action == "chat":
-            response_json["exercise"] = ""
-
-        elif final_action == "correction":
-            response_json["exercise"] = ""
-
-        elif final_action == "exercise":
-            print(
-                f"🎯 SKILL EXERCISE ENGINE ACTIVATED FOR EXERCISE -> {exercise_focus}"
-            )
-
-            # 1. Extração unificada dos níveis para o log
-            memory_level = memory_data.get("english_level", "A2")
-            advanced_structures = memory_data.get("advanced_structures", {})
-            estimated_level = estimate_level(advanced_structures)
-            adaptive_level = estimated_level
-
-            # 🎓 Prints de telemetria
-            print(f"🎓 MEMORY LEVEL: {memory_level}")
-            print(f"🎓 ESTIMATED LEVEL: {estimated_level}")
-            print(f"🎓 ADAPTIVE LEVEL USED: {adaptive_level}")
-            print("==================================================\n")
-
-            # Invocação da engine com o nível dinâmico mapeado
-            response_json["exercise"] = get_skill_specific_exercise(
-                skill=exercise_focus, level=adaptive_level, exercise_type=exercise_type
-            )
-            print(f"🎯 ADAPTIVE EXERCISE GENERATED: {response_json['exercise']}")
-
-        elif final_action == "question":
-            # 🎓 MUDANÇA 1 & 3: Limpeza completa do bloco morto redundante e remoção de imports duplicados
-            advanced_structures = memory_data.get("advanced_structures", {})
-            adaptive_level = estimate_level(advanced_structures)
-
-            # 🎓 MUDANÇA 2: Corrigido o motor adaptativo para passar 'adaptive_level' em vez de 'english_level'
-            response_json["exercise"] = get_skill_specific_exercise(
-                skill=exercise_focus,
-                level=adaptive_level,
-                exercise_type=exercise_type,
-            )
-            print(
-                f"🎯 ADAPTIVE EXERCISE GENERATED (IN QUESTION MODE): {response_json['exercise']}"
-            )
-
-        print("\n=== AI SUMMARY DECISION ===")
-        print(f"ACTION: {response_json.get('teacher_action')}")
-        print(f"CORRECTION: {response_json.get('needs_correction')}")
-        print(f"CONFIDENCE: {response_json.get('grammar_confidence')}")
-        print("===================\n")
-        print(f"🎯 RESPONSE SKILL: {response_json.get('detected_skill')}")
-
-        response_json["target_skill"] = exercise_focus
+        response_json["target_skill"] = pedagogical["exercise_focus"]
 
         return response_json
 

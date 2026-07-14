@@ -1,4 +1,3 @@
-
 import uuid
 
 from datetime import date, timedelta
@@ -39,6 +38,7 @@ from app.models.conversation import Conversation
 from app.services.teacher.engine import (
     teacher_engine,
 )
+from app.services.error_pattern_engine import detect_known_error
 
 
 from app.services.teacher.context import (
@@ -61,8 +61,6 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
     try:
         # 📝 Centraliza o texto do usuário para deixar o código limpo
         user_text = request.message
-
-        
 
         analysis = grammar_engine.analyze(user_text)
 
@@ -97,9 +95,6 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         db.add(user_message)
         db.commit()
 
-
-        
-
         # 🧠 Carrega a memória ANTES para poder injetar e ler as estruturas acumuladas nela
         user_memory = get_user_memory(db, request.user_id)
 
@@ -109,9 +104,12 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             user_memory=user_memory,
         )
 
+        known_error = detect_known_error(user_text)
+
         teacher_context = TeacherContext(
             grammar=analysis,
             pedagogical=pedagogical,
+            known_error=known_error,
         )
 
         teacher_result = teacher_engine.decide(
@@ -120,7 +118,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
 
         brain_state = teacher_result.brain
 
-        #conversation_analysis = teacher_result.conversation
+        # conversation_analysis = teacher_result.conversation
 
         print()
         print("=" * 60)
@@ -134,15 +132,11 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             pedagogical,
         )
 
-       # conversation_logger.analysis(
+        # conversation_logger.analysis(
         #    teacher_result.brain,
-        #)
-
+        # )
 
         debug.pedagogical.analysis(pedagogical)
-
-        
-        
 
         user_memory.data = {
             **user_memory.data,
@@ -168,7 +162,6 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             }
             for msg in history[-8:]
         ]
-        
 
         ai_response_dict = generate_response(
             messages_for_ai,
@@ -198,12 +191,6 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             ai_response_dict,
         )
 
-        
-
-        
-
-        
-
         # ==========================================================
         # SHADOW MODE: Validação da Migração de Erros
         # ==========================================================
@@ -215,7 +202,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         # Logs simplificados consumindo diretamente o estado encapsulado do objeto
         debug.skill.resolution(
             pedagogical,
-            )
+        )
         debug.sanitizer.final(
             pedagogical,
         )

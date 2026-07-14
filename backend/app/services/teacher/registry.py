@@ -31,26 +31,16 @@ class TeacherRegistry:
         context: TeacherContext,
     ) -> TeacherStrategy:
 
-        for strategy in self.strategies:
-            if intent == TeacherIntent.CORRECT and not isinstance(
-                strategy,
-                CorrectionStrategy,
-            ):
-                continue
+        match intent:
 
-            if intent != TeacherIntent.CORRECT and isinstance(
-                strategy,
-                CorrectionStrategy,
-            ):
-                continue
+            case TeacherIntent.CORRECT:
+                return CorrectionStrategy()
 
-            if strategy.matches(
-                context.grammar,
-                context.pedagogical,
-            ):
-                return strategy
+            case TeacherIntent.CONVERSATION:
+                return ConversationStrategy()
 
-        return ConversationStrategy()
+            case _:
+                return ConversationStrategy()
 
 
 teacher_registry = TeacherRegistry()

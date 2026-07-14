@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from app.services.teacher.constants.interruption_levels import (
-    InterruptionLevel,
-)
-
 from app.services.teacher.policies.base import (
     TeacherPolicy,
 )
@@ -13,10 +9,10 @@ from app.services.teacher.policies.models import (
 )
 
 
-class InterruptionPolicy(TeacherPolicy):
+class PraisePolicy(TeacherPolicy):
     @property
     def priority(self) -> int:
-        return 20
+        return 30
 
     def evaluate(
         self,
@@ -26,9 +22,11 @@ class InterruptionPolicy(TeacherPolicy):
 
         result = PolicyResult()
 
-        if lesson.active:
-            result.interruption_level = InterruptionLevel.NONE
+        if perception.has_error:
+            return result
 
-            result.reason = "Lesson already in progress."
+        result.should_praise = True
+
+        result.reason = "Student answered correctly."
 
         return result

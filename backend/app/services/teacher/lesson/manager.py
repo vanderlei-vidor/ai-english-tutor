@@ -30,9 +30,11 @@ class LessonManager:
         # Conversation mode
         # ---------------------------------------------------------
 
-        if action_plan.goal != "teach":
-
-            self.finish()
+        if (
+            self.lesson.active
+            and
+            not self.lesson.completed
+        ):
 
             return self.lesson
 
@@ -142,6 +144,19 @@ class LessonManager:
     def finish(self):
 
         self.lesson = LessonState()
+
+    def apply_to_plan(
+        self,
+        plan,
+    ):
+        
+        plan.goal = self.lesson.goal
+
+        plan.lesson_type = self.lesson.lesson_type
+
+        plan.target_skill = self.lesson.target_skill
+
+        plan.phase = self.lesson.current_phase
 
 
 lesson_manager = LessonManager()

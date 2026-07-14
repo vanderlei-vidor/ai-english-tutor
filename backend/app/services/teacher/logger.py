@@ -16,6 +16,7 @@ class TeacherLogger:
         reflection = brain_state.reflection
         
         plan = brain_state.planning
+        prompt = brain_state.prompt
         lesson = brain_state.lesson
 
         print()
@@ -54,6 +55,7 @@ class TeacherLogger:
         print(
         f"INTERRUPTION LEVEL:   {reflection.interruption_level}"
         )
+        print(f"SHOULD PRAISE:        {reflection.should_praise}")
        
 
 
@@ -131,6 +133,67 @@ class TeacherLogger:
         print(f"CONFIDENCE:           {plan.confidence:.2f}")
 
         print(f"PRIORITY:             {plan.teaching_priority}")
+
+        # ------------------------------------------------------
+        # PROMPT PLAN
+        # ------------------------------------------------------
+
+
+        print()
+
+        print("PROMPT PLAN")
+
+        print("-" * 60)
+
+        print(f"MODE:                 {prompt.mode}")
+
+        print(f"ACTION:              {prompt.action}")
+
+        print(f"GOAL:                {prompt.goal}")
+
+        print(f"STYLE:               {prompt.style}")
+
+        print(f"TONE:                {prompt.tone}")
+
+        print(f"TARGET SKILL:        {prompt.target_skill}")
+
+        print(f"EXPLANATION:         {prompt.explanation_level}")
+
+        print()
+
+        print(f"GENERATE EXAMPLE:    {prompt.generate_example}")
+
+        print(f"GENERATE EXERCISE:   {prompt.generate_exercise}")
+
+        print(f"ASK QUESTION:        {prompt.ask_question}")
+
+        print(f"WAIT STUDENT:        {prompt.wait_student}")
+
+
+        print()
+
+        # ------------------------------------------------------
+        # INSTRUCTIONS
+        # ------------------------------------------------------
+        
+
+        print("INSTRUCTIONS")
+        print("-" * 60)
+
+        for instruction in prompt.instructions:
+            print(f"• {instruction}")
+
+        print()
+
+        print("CONSTRAINTS")
+        print("-" * 60)
+
+        for constraint in prompt.constraints:
+            print(f"• {constraint}")
+
+
+        print()
+
 
         # ------------------------------------------------------
         # LESSON STATE

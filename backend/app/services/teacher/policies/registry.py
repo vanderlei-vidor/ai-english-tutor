@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+from app.services.teacher.policies.policies.praise_policy import PraisePolicy
+
 from .base import TeacherPolicy
+
+from .policies.correction import (
+    CorrectionPolicy,
+)
+
+from .policies.interruption import (
+    InterruptionPolicy,
+)
 
 _POLICIES: list[TeacherPolicy] = []
 
@@ -20,13 +30,7 @@ def get_policies() -> list[TeacherPolicy]:
     )
 
 
-from .policies.correction import (
-    CorrectionPolicy,
-)
 
-from .policies.interruption import (
-    InterruptionPolicy,
-)
 
 register_policy(
     CorrectionPolicy(),
@@ -34,4 +38,8 @@ register_policy(
 
 register_policy(
     InterruptionPolicy(),
+)
+
+register_policy(
+    PraisePolicy(),
 )

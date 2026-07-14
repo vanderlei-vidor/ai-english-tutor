@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.services.teacher.constants.interruption_levels import InterruptionLevel
+
 
 @dataclass(slots=True)
 class TeacherPerception:
@@ -42,9 +44,15 @@ class TeacherReflection:
 
     should_review: bool = False
 
+    should_praise: bool = False
+
+    interruption_level: InterruptionLevel = InterruptionLevel.NONE
+
     teaching_reason: str = ""
 
-    interruption_level: str = "none"
+    
+
+    
 
 
 @dataclass(slots=True)
@@ -160,3 +168,5 @@ class TeacherActionPlan:
     encouragement_required: bool = False
 
     celebrate_success: bool = False
+
+    

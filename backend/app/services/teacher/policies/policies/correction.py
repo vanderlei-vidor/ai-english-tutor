@@ -7,7 +7,9 @@ from app.services.teacher.policies.base import (
 from app.services.teacher.policies.models import (
     PolicyResult,
 )
-
+from app.services.teacher.constants.interruption_levels import (
+    InterruptionLevel,
+)
 
 class CorrectionPolicy(TeacherPolicy):
     @property
@@ -30,10 +32,10 @@ class CorrectionPolicy(TeacherPolicy):
 
             return result
 
-        # Existe erro
-        result.should_interrupt = True
-
-        result.interruption_level = "high"
+        
+        result.interruption_level = (
+            InterruptionLevel.HIGH
+        )
 
         result.decision_strength = 100
 

@@ -47,9 +47,6 @@ class TeacherEngine:
         context: TeacherContext,
     ) -> TeacherResult:
         
-        
-
-
         brain_state = teacher_brain.think(
             context,
         )
@@ -68,28 +65,21 @@ class TeacherEngine:
             context=context,
         )
 
-        teacher_decision = strategy.build(
+        strategy.build(
             brain_state,
         )
-
-        
-
-
 
         print()
         print("=" * 60)
         print("TEACHER BRAIN")
         print("=" * 60)
-        print(f"Intent  : {teacher_decision.intent.value}")
+        print(f"Intent  : {decision.intent.value}")
         print(f"Strategy: {strategy.__class__.__name__}")
         print("=" * 60)
 
         lesson_manager.set_last_action(
             brain_state.planning.action,
         )
-
-        
-
         lesson_manager.advance()
 
         return TeacherResult(

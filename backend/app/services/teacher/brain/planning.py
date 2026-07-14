@@ -5,6 +5,9 @@ from .models import (
     TeacherReflection,
     TeacherActionPlan,
 )
+from app.services.teacher.constants.interruption_levels import (
+    InterruptionLevel,
+)
 
 
 class TeacherPlanningEngine:
@@ -16,15 +19,27 @@ class TeacherPlanningEngine:
 
         plan = TeacherActionPlan()
 
-        if reflection.interruption_level == "high":
-            
+        if (
+            reflection.interruption_level
+            is InterruptionLevel.HIGH
+        ):
+
             self._apply_teaching_plan(
                 plan,
                 perception,
                 reflection,
             )
 
+        elif reflection.should_praise:
+
+            self._apply_praise_plan(
+                plan,
+                perception,
+                reflection,
+            )
+
         else:
+
             self._apply_conversation_plan(
                 plan,
                 perception,
@@ -32,7 +47,6 @@ class TeacherPlanningEngine:
             )
 
         return plan
-
     # ==========================================================
     # Teaching
     # ==========================================================
@@ -62,7 +76,7 @@ class TeacherPlanningEngine:
 
         plan.teaching_priority = 100
 
-        plan.interruption_level = "high"
+        plan.interruption_level = InterruptionLevel.HIGH
 
         plan.conversation_policy = "pause"
 
@@ -112,7 +126,7 @@ class TeacherPlanningEngine:
 
         plan.teaching_priority = 10
 
-        plan.interruption_level = "low"
+        plan.interruption_level = InterruptionLevel.LOW
 
         plan.conversation_policy = "continue"
 
@@ -261,6 +275,18 @@ class TeacherPlanningEngine:
 
                 plan.finish_lesson = True
 
+            case "praise":
+
+                plan.teaching_mode = "conversation"
+
+                plan.action = "praise"
+
+                plan.response_style = "natural"
+
+                plan.tone = "friendly"
+
+                plan.explanation_level = "normal"
+
             case _:
                 plan.teaching_mode = "conversation"
 
@@ -271,6 +297,8 @@ class TeacherPlanningEngine:
                 plan.tone = "friendly"
 
                 plan.explanation_level = "normal"
+
+            
 
         plan.teacher_strategy = plan.teaching_mode
 
@@ -291,6 +319,51 @@ class TeacherPlanningEngine:
             phase,
             "value",
             phase,
+        )
+    
+
+    def _apply_praise_plan(
+        self,
+        plan: TeacherActionPlan,
+        perception: TeacherPerception,
+        reflection: TeacherReflection,
+    ) -> None:
+
+        plan.goal = "conversation"
+
+        plan.lesson_type = "conversation"
+
+        plan.phase = "praise"
+
+        plan.next_step = "praise"
+
+        plan.target_skill = perception.target_skill
+
+        plan.teaching_priority = 20
+
+        plan.interruption_level = (
+            InterruptionLevel.NONE
+        )
+
+        plan.conversation_policy = "continue"
+
+        plan.teacher_reason = (
+            reflection.teaching_reason
+        )
+
+        plan.celebrate_success = True
+
+        plan.should_teach = False
+
+        plan.should_review = False
+
+        plan.should_exercise = False
+
+        plan.confidence = 1.0
+
+        self._apply_response_decision(
+            plan,
+            phase=plan.phase,
         )
 
 

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.services.teacher.constants.interruption_levels import (
+    InterruptionLevel,
+)
+
 
 @dataclass(slots=True)
 class PolicyResult:
-    should_interrupt: bool | None = None
 
     should_review: bool | None = None
 
@@ -15,8 +18,12 @@ class PolicyResult:
 
     should_start_new_lesson: bool | None = None
 
-    interruption_level: str | None = None
+    should_praise: bool | None = None
+
+    interruption_level: InterruptionLevel | None = None
 
     decision_strength: int = 0
 
     reason: str = ""
+
+    

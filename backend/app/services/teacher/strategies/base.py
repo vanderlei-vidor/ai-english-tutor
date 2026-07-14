@@ -2,10 +2,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from app.services.teacher.models import (
-    TeacherDecision,
-)
-
 from app.services.teacher.brain.state import (
     TeacherBrainState,
 )
@@ -31,4 +27,4 @@ class TeacherStrategy(ABC):
     def build(
         self,
         brain_state: TeacherBrainState,
-    ) -> TeacherDecision: ...
+    ) -> None: ...

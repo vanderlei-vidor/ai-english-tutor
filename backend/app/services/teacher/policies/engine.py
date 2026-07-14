@@ -24,9 +24,6 @@ class TeacherPolicyEngine:
                 lesson,
             )
 
-            if result.should_interrupt is not None:
-                policy_result.should_interrupt = result.should_interrupt
-
             if result.should_review is not None:
                 policy_result.should_review = result.should_review
 
@@ -36,7 +33,13 @@ class TeacherPolicyEngine:
             if result.reason:
                 policy_result.reason = result.reason
 
-            if result.interruption_level:
+            if result.should_praise is not None:
+
+                policy_result.should_praise = (
+                    result.should_praise
+                )
+
+            if result.interruption_level is not None:
 
                 policy_result.interruption_level = (
                     result.interruption_level

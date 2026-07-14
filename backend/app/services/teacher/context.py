@@ -19,3 +19,5 @@ class TeacherContext:
     grammar: GrammarAnalysis
 
     pedagogical: PedagogicalAnalysis
+
+    known_error: dict | None = None
