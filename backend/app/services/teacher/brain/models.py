@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.services.teacher.constants.interruption_levels import InterruptionLevel
-
+from app.services.teacher.pedagogy.teaching_models import (
+    TeachingStrategyPlan,
+)
 
 @dataclass(slots=True)
 class TeacherPerception:
@@ -105,11 +107,7 @@ class TeacherActionPlan:
 
     teaching_priority: int = 0
 
-    #expected_turns: int = 1
-
     expected_turns: int = 1
-
-    #completion_condition: str = ""
 
     completion_condition: str = ""
 

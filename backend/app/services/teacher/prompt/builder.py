@@ -9,6 +9,7 @@ class TeacherPromptBuilder:
     def build(
         self,
         action_plan,
+        teaching_plan,
     ) -> TeacherPrompt:
 
         prompt = TeacherPrompt()

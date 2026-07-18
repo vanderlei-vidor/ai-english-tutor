@@ -1,250 +1,181 @@
 from __future__ import annotations
 
 
-
-
 class TeacherLogger:
     # ==========================================================
-    # Teacher Brain
+    # Estilização & Helpers de Interface
     # ==========================================================
 
-    def brain(
-        self,
-        brain_state,
-    ):
-        perception = brain_state.perception
-        reflection = brain_state.reflection
-        
-        plan = brain_state.planning
-        prompt = brain_state.prompt
-        lesson = brain_state.lesson
-
+    def _section(self, title: str) -> None:
+        """Imprime um divisor visual de seção."""
         print()
-        print("=" * 60)
-        print("TEACHER BRAIN 2.0")
-        print("=" * 60)
-
-        # ------------------------------------------------------
-        # PERCEPTION
-        # ------------------------------------------------------
-
-        print()
-        print("PERCEPTION")
+        print("-" * 60)
+        print(title)
         print("-" * 60)
 
-        print(f"HAS ERROR:            {perception.has_error}")
-        print(f"DETECTED SKILL:       {perception.detected_skill}")
-        print(f"TARGET SKILL:         {perception.target_skill}")
-        print(f"CURRENT FOCUS:        {perception.current_focus}")
-        print(f"ESTIMATED LEVEL:      {perception.estimated_level}")
-        print(f"STUDENT CONFIDENT:    {perception.student_confident}")
-        print(f"NEEDS INTERVENTION:   {perception.needs_intervention}")
-
-        # ------------------------------------------------------
-        # REFLECTION
-        # ------------------------------------------------------
-
-        print()
-        print("REFLECTION")
-        print("-" * 60)
-
-        print(f"CONTINUE LESSON:      {reflection.should_continue_lesson}")
-        print(f"START NEW LESSON:     {reflection.should_start_new_lesson}")
-        print(f"REVIEW:               {reflection.should_review}")
-        print(f"REASON:               {reflection.teaching_reason}")
-        print(
-        f"INTERRUPTION LEVEL:   {reflection.interruption_level}"
-        )
-        print(f"SHOULD PRAISE:        {reflection.should_praise}")
-       
-
-
-        # ------------------------------------------------------
-        # PLANNING
-        # ------------------------------------------------------
-
-        print()
-        print("PLANNING")
-        print("-" * 60)
-
-        print(f"GOAL:                 {plan.goal}")
-        print(f"LESSON TYPE:          {plan.lesson_type}")
-        print(f"TEACHING PRIORITY:    {plan.teaching_priority}")
-        print(f"INTERRUPTION:         {plan.interruption_level}")
-        print(f"CONVERSATION:         {plan.conversation_policy}")
-        print(f"TARGET SKILL:         {plan.target_skill}")
-        print(f"EXPLANATION LEVEL:    {plan.explanation_level}")
-        print(f"REQUIRES EXERCISE:    {plan.requires_exercise}")
-        print(f"REQUIRES REVIEW:      {plan.requires_review}")
-
-
-        # ------------------------------------------------------
-        # ACTION PLAN
-        # ------------------------------------------------------
-
-        print()
-        print("ACTION PLAN")
-        print("-" * 60)
-
-        print(f"GOAL:                 {plan.goal}")
-
-        print(f"LESSON TYPE:          {plan.lesson_type}")
-
-        print(f"TARGET SKILL:         {plan.target_skill}")
-
-        print()
-
-        print(f"MODE:                 {plan.teaching_mode}")
-
-        print(f"ACTION:               {plan.action}")
-
-        print(f"REASON:               {plan.teacher_reason}")
-
-        print()
-
-        print(f"STYLE:                {plan.response_style}")
-
-        print(f"TONE:                 {plan.tone}")
-
-        print(f"EXPLANATION:          {plan.explanation_level}")
-
-        print()
-
-        print(f"GENERATE EXAMPLE:     {plan.generate_example}")
-
-        print(f"GENERATE EXERCISE:    {plan.generate_exercise}")
-
-        print(f"ASK QUESTION:         {plan.ask_question}")
-
-        print(f"WAIT STUDENT:         {plan.wait_for_student}")
-
-        print(f"FINISH LESSON:        {plan.finish_lesson}")
-
-        print()
-
-        print(f"SHOULD TEACH:         {plan.should_teach}")
-
-        print(f"SHOULD REVIEW:        {plan.should_review}")
-
-        print(f"SHOULD EXERCISE:      {plan.should_exercise}")
-
-        print()
-
-        print(f"CONFIDENCE:           {plan.confidence:.2f}")
-
-        print(f"PRIORITY:             {plan.teaching_priority}")
-
-        # ------------------------------------------------------
-        # PROMPT PLAN
-        # ------------------------------------------------------
-
-
-        print()
-
-        print("PROMPT PLAN")
-
-        print("-" * 60)
-
-        print(f"MODE:                 {prompt.mode}")
-
-        print(f"ACTION:              {prompt.action}")
-
-        print(f"GOAL:                {prompt.goal}")
-
-        print(f"STYLE:               {prompt.style}")
-
-        print(f"TONE:                {prompt.tone}")
-
-        print(f"TARGET SKILL:        {prompt.target_skill}")
-
-        print(f"EXPLANATION:         {prompt.explanation_level}")
-
-        print()
-
-        print(f"GENERATE EXAMPLE:    {prompt.generate_example}")
-
-        print(f"GENERATE EXERCISE:   {prompt.generate_exercise}")
-
-        print(f"ASK QUESTION:        {prompt.ask_question}")
-
-        print(f"WAIT STUDENT:        {prompt.wait_student}")
-
-
-        print()
-
-        # ------------------------------------------------------
-        # INSTRUCTIONS
-        # ------------------------------------------------------
-        
-
-        print("INSTRUCTIONS")
-        print("-" * 60)
-
-        for instruction in prompt.instructions:
-            print(f"• {instruction}")
-
-        print()
-
-        print("CONSTRAINTS")
-        print("-" * 60)
-
-        for constraint in prompt.constraints:
-            print(f"• {constraint}")
-
-
-        print()
-
-
-        # ------------------------------------------------------
-        # LESSON STATE
-        # ------------------------------------------------------
-
-        print()
-        print("LESSON STATE")
-        print("-" * 60)
-
-        print(f"ACTIVE:               {lesson.active}")
-        print(f"GOAL:                 {lesson.goal}")
-        print(f"LESSON TYPE:          {lesson.lesson_type}")
-        print(f"TARGET SKILL:         {lesson.target_skill}")
-        print(f"CURRENT PHASE:        {lesson.current_phase}")
-        print(f"STEP:                 {lesson.current_step} / {lesson.total_steps}")
-        print(f"EXPECTED TURNS:       {lesson.expected_turns}")
-        print(f"TURNS ELAPSED:        {lesson.turns_elapsed}")
-        print(f"LAST ACTION:          {lesson.last_teacher_action}")
-        print(f"COMPLETED:            {lesson.completed}")
-
-        print("=" * 60)
-
-        
+    def _field(self, name: str, value: any) -> None:
+        """Imprime um campo formatado com alinhamento padrão."""
+        if isinstance(value, float):
+            value = f"{value:.2f}"
+        print(f"{name:<22} {value}")
+
+    def _bullet_list(self, title: str, items: list[str]) -> None:
+        """Imprime uma lista de itens com bullets de forma elegante."""
+        if not items:
+            return
+        print(f"\n{title}:")
+        for item in items:
+            print(f"  • {item}")
 
     # ==========================================================
-    # Teacher Decision
+    # Componentes do Logger (Orientado a Componentes)
     # ==========================================================
 
-    def decision(
-        self,
-        teacher_decision,
-    ):
+    def _grammar(self, state) -> None:
+        self._section("GRAMMAR")
+        self._field("HAS ERROR", getattr(state, "has_error", None))
+        self._field("CURRENT FOCUS", getattr(state, "current_focus", None))
+
+        # ------------------------------------------------------
+        # SKILL FOCUS (Simplificado para o Presente / Teacher Brain)
+        # ------------------------------------------------------
+        self._section("SKILL FOCUS")
+
+        skill_focus = getattr(state, "skill_focus", None)
+        self._field("DETECTED", getattr(skill_focus, "detected", None))
+        self._field("TEACHING", getattr(skill_focus, "teaching", None))
+
+    def _pedagogical_memory(self, state, student) -> None:
+        # ------------------------------------------------------
+        # PEDAGOGICAL MEMORY (Histórico de Longo Prazo)
+        # ------------------------------------------------------
+        self._section("PEDAGOGICAL MEMORY")
+
+        skill_focus = getattr(state, "skill_focus", None) if state else None
+
+        # Atributos do histórico vindos do Estado Atual (Brain)
+        self._field("RECOMMENDED", getattr(skill_focus, "recommended", None))
+        self._field("WEAKEST", getattr(skill_focus, "weakest", None))
+
+        # Atributos evolutivos vindos do Perfil do Aluno (Student)
+        mastery = getattr(student, "mastery", None) if student else None
+        # Formata em porcentagem se for um float válido (Ex: 0.17 -> 17%)
+        if isinstance(mastery, float) and mastery <= 1.0:
+            mastery_format = f"{mastery * 100:.0f}%"
+        else:
+            mastery_format = mastery
+
+        self._field("MASTERY", mastery_format)
+        self._field(
+            "REVIEW", getattr(student, "review_required", None) if student else None
+        )
+        self._field(
+            "EXERCISE", getattr(student, "exercise_required", None) if student else None
+        )
+
+    def _student(self, student) -> None:
+        self._section("STUDENT")
+        self._field("USER ID", getattr(student, "user_id", None))
+        self._field("LEVEL", getattr(student, "estimated_level", None))
+        self._field("CURRENT SKILL", getattr(student, "current_skill", None))
+        self._field("MASTERY", getattr(student, "mastery", None))
+        self._field("ACCURACY", getattr(student, "accuracy", None))
+        self._field("LEARNING SPEED", getattr(student, "learning_speed", None))
+        self._field("LAST SKILL", getattr(student, "last_skill", None))
+        self._field("LAST ERROR", getattr(student, "last_error", None))
+        self._field("CONSECUTIVE ERRORS", getattr(student, "consecutive_errors", None))
+        self._field(
+            "CONSECUTIVE SUCCESSES", getattr(student, "consecutive_successes", None)
+        )
+
+        self._bullet_list("WEAK SKILLS", getattr(student, "weak_skills", []))
+        self._bullet_list("STRONG SKILLS", getattr(student, "strong_skills", []))
+
+    def _lesson(self, state) -> None:
+        self._section("LESSON")
+        self._field("ACTIVE", getattr(state, "lesson_active", None))
+        self._field("GOAL", getattr(state, "lesson_goal", None))
+        self._field("PHASE", getattr(state, "lesson_phase", None))
+
+        step = getattr(state, "lesson_step", None)
+        total = getattr(state, "lesson_total_steps", None)
+        step_format = (
+            f"{step}/{total}" if step is not None and total is not None else None
+        )
+        self._field("STEP", step_format)
+
+    def _decision(self, state) -> None:
+        self._section("DECISION")
+        self._field("ACTION", getattr(state, "teacher_action", None))
+        self._field("MODE", getattr(state, "teacher_mode", None))
+        self._field("STYLE", getattr(state, "response_style", None))
+        self._field("TONE", getattr(state, "tone", None))
+        self._field("REASON", getattr(state, "teacher_reason", None))
+
+    def _teaching(self, teaching) -> None:
+        self._section("TEACHING")
+        self._field("STRATEGY", getattr(teaching, "strategy", None))
+        self._field("EXPLANATION", getattr(teaching, "explanation_style", None))
+        self._field("FEEDBACK", getattr(teaching, "feedback_style", None))
+        self._field("QUESTION", getattr(teaching, "question_style", None))
+        self._field("EXAMPLE", getattr(teaching, "example_style", None))
+        self._field("EXERCISE", getattr(teaching, "exercise_style", None))
+        self._field("REVEAL ANSWER", getattr(teaching, "reveal_answer", None))
+        self._field("WAIT STUDENT", getattr(teaching, "wait_student", None))
+
+        explanation = getattr(teaching, "explanation", None)
+        self._field("DIFFICULTY", getattr(explanation, "difficulty", None))
+        self._field("SCAFFOLDING", getattr(explanation, "scaffolding", None))
+
+    def _prompt(self, state) -> None:
+        instructions = getattr(state, "instructions", [])
+        constraints = getattr(state, "constraints", [])
+
+        if instructions or constraints:
+            self._section("PROMPT")
+            self._bullet_list("INSTRUCTIONS", instructions)
+            self._bullet_list("CONSTRAINTS", constraints)
+
+    # ==========================================================
+    # Métodos Públicos (Orquestradores)
+    # ==========================================================
+
+    def brain(self, brain_state) -> None:
+        """
+        Orquestra a exibição do estado global unificado do Teacher Brain.
+        """
+        state = getattr(brain_state, "state", None)
+        student = getattr(brain_state, "student", None)
+        teaching = getattr(brain_state, "teaching", None)
 
         print()
         print("=" * 60)
-        print("TEACHER DECISION")
+        print("TEACHER BRAIN 3.0 (COMPONENTS-BASED)")
         print("=" * 60)
 
-        print(
-            f"INTENT:        {teacher_decision.intent.value}"
-        )
+        if state:
+            self._grammar(state)
 
-        print(
-            f"PRIORITY:      {teacher_decision.priority}"
-        )
+        # Executa a memória pedagógica cruzando dados de estado e do estudante
+        if state or student:
+            self._pedagogical_memory(state, student)
 
-        print(
-            f"CONFIDENCE:    {teacher_decision.confidence:.2f}"
-        )
+        if student:
+            self._student(student)
 
+        if state:
+            self._lesson(state)
+            self._decision(state)
+
+        if teaching:
+            self._teaching(teaching)
+
+        if state:
+            self._prompt(state)
+
+        print()
         print("=" * 60)
 
 
+# Inicialização padrão
 teacher_logger = TeacherLogger()

@@ -6,12 +6,9 @@ from app.services.teacher.brain.state import (
     TeacherBrainState,
 )
 
-from app.services.pedagogical.analysis import (
-    PedagogicalAnalysis,
-)
 
-from app.services.grammar_engine.models import (
-    GrammarAnalysis,
+from app.services.teacher.state.models import (
+    TeachingState,
 )
 
 
@@ -19,9 +16,9 @@ class TeacherStrategy(ABC):
     @abstractmethod
     def matches(
         self,
-        grammar: GrammarAnalysis,
-        pedagogical: PedagogicalAnalysis,
+        state: TeachingState,
     ) -> bool: ...
+
 
     @abstractmethod
     def build(

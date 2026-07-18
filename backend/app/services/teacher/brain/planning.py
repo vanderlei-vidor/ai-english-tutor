@@ -8,13 +8,16 @@ from .models import (
 from app.services.teacher.constants.interruption_levels import (
     InterruptionLevel,
 )
-
+from app.services.teacher.state.models import (
+    TeachingState,
+)
 
 class TeacherPlanningEngine:
     def plan(
         self,
         perception: TeacherPerception,
         reflection: TeacherReflection,
+        state: TeachingState,
     ) -> TeacherActionPlan:
 
         plan = TeacherActionPlan()
@@ -28,6 +31,7 @@ class TeacherPlanningEngine:
                 plan,
                 perception,
                 reflection,
+                state,
             )
 
         elif reflection.should_praise:
@@ -36,6 +40,7 @@ class TeacherPlanningEngine:
                 plan,
                 perception,
                 reflection,
+                state,
             )
 
         else:
@@ -44,7 +49,13 @@ class TeacherPlanningEngine:
                 plan,
                 perception,
                 reflection,
+                state,
             )
+
+        self._sync_state(
+            state,
+            plan,
+        )   
 
         return plan
     # ==========================================================
@@ -56,6 +67,7 @@ class TeacherPlanningEngine:
         plan: TeacherActionPlan,
         perception: TeacherPerception,
         reflection: TeacherReflection,
+        state: TeachingState,
     ) -> None:
 
         plan.goal = "teach"
@@ -66,7 +78,13 @@ class TeacherPlanningEngine:
 
         plan.next_step = "correction"
 
-        plan.target_skill = perception.detected_skill
+        plan.target_skill = (
+            state.skill_focus.detected
+        )
+
+        state.skill_focus.teaching = (
+            plan.target_skill
+        )
 
         plan.explanation_level = "normal"
 
@@ -112,6 +130,7 @@ class TeacherPlanningEngine:
         plan: TeacherActionPlan,
         perception: TeacherPerception,
         reflection: TeacherReflection,
+        state: TeachingState,
     ) -> None:
 
         plan.goal = "conversation"
@@ -122,7 +141,7 @@ class TeacherPlanningEngine:
 
         plan.next_step = "chat"
 
-        plan.target_skill = perception.target_skill
+        plan.target_skill = state.target_skill
 
         plan.teaching_priority = 10
 
@@ -327,6 +346,7 @@ class TeacherPlanningEngine:
         plan: TeacherActionPlan,
         perception: TeacherPerception,
         reflection: TeacherReflection,
+        state: TeachingState,
     ) -> None:
 
         plan.goal = "conversation"
@@ -366,5 +386,25 @@ class TeacherPlanningEngine:
             phase=plan.phase,
         )
 
+
+    def _sync_state(
+        self,
+        state: TeachingState,
+        plan: TeacherActionPlan,
+    ) -> None:
+
+        state.teacher_action = plan.action
+
+        state.teacher_mode = plan.teaching_mode
+
+        state.teacher_reason = plan.teacher_reason
+
+        state.response_style = plan.response_style
+
+        state.tone = plan.tone
+
+        state.lesson_goal = plan.goal
+
+        state.lesson_phase = plan.phase
 
 teacher_planning_engine = TeacherPlanningEngine()

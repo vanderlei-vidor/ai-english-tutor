@@ -107,9 +107,12 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         known_error = detect_known_error(user_text)
 
         teacher_context = TeacherContext(
+            user_id=request.user_id,
             grammar=analysis,
             pedagogical=pedagogical,
             known_error=known_error,
+            conversation_id=conversation.id,
+            message=user_text,
         )
 
         teacher_result = teacher_engine.decide(

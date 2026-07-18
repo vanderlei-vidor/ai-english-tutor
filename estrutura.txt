@@ -1,6 +1,0 @@
-Listagem de caminhos de pasta para o volume Acer
-O número de série do volume é 00000153 22B2:CC6C
-C:\USERS\BIBIJ\AI-ENGLISH-TUTOR\APP
-Caminho inválido - \USERS\BIBIJ\AI-ENGLISH-TUTOR\APP
-Não existem subpastas 
-

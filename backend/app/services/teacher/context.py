@@ -16,8 +16,15 @@ class TeacherContext:
     personality...) serão adicionadas aqui.
     """
 
+    user_id: str
+
     grammar: GrammarAnalysis
 
     pedagogical: PedagogicalAnalysis
 
+    # Opcionais
     known_error: dict | None = None
+
+    conversation_id: str | None = None
+
+    message: str | None = None

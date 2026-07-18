@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from app.services.teacher.pedagogy.teaching_engine import (
+    teaching_engine,
+)
+
 from .perception import (
     teacher_perception_engine,
 )
@@ -23,6 +27,18 @@ from app.services.teacher.response.planner import (
 from app.services.teacher.prompt.builder import (
     teacher_prompt_builder,
 )
+from app.services.teacher.state.models import (
+    TeachingState,
+)
+
+from app.services.teacher.state.memory_sync import (
+    memory_state_sync,
+)
+
+from app.services.teacher.student.manager import (
+    student_manager,
+)
+
 
 class TeacherBrain:
     """
@@ -41,22 +57,38 @@ class TeacherBrain:
         self,
         context,
     ):
+        state = TeachingState()
 
-        perception = teacher_perception_engine.perceive(
+        student = student_manager.load(
             context,
         )
 
+        state.student = student
+
+        perception = teacher_perception_engine.perceive(
+            context=context,
+            state=state,
+        )
+
+        memory_state_sync.synchronize(
+            state,
+            context.pedagogical,
+        )
+
         reflection = teacher_reflection_engine.reflect(
-            perception,
+            perception=perception,
+            state=state,
         )
 
         plan = teacher_planning_engine.plan(
-            perception,
-            reflection,
+            perception=perception,
+            reflection=reflection,
+            state=state,
         )
 
         lesson = lesson_manager.update(
-            plan,
+            action_plan=plan,
+            state=state,
         )
 
         if lesson.active:
@@ -65,18 +97,26 @@ class TeacherBrain:
                 plan,
                 lesson,
             )
+            
+        teaching_plan = teaching_engine.build(
+            state,
+        )
 
         response = teacher_response_planner.create_response_plan(
             plan,
         )
         teacher_prompt = teacher_prompt_builder.build(
             plan,
+            teaching_plan,
         )
 
         return TeacherBrainState(
+            state=state,
+            student=student,
             perception=perception,
             reflection=reflection,
             planning=plan,
+            teaching=teaching_plan,
             lesson=lesson,
             response=response,
             prompt=teacher_prompt,

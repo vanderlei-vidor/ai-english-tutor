@@ -14,12 +14,15 @@ from app.services.teacher.lesson.manager import (
 from app.services.teacher.policies.engine import (
     teacher_policy_engine,
 )
-
+from app.services.teacher.state.models import (
+    TeachingState,
+)
 
 class TeacherReflectionEngine:
     def reflect(
         self,
         perception: TeacherPerception,
+        state: TeachingState,
     ) -> TeacherReflection:
 
         reflection = TeacherReflection()

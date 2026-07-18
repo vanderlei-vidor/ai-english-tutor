@@ -44,9 +44,9 @@ class PromptBuilder:
             should_teach=action_plan.should_teach,
             should_review=action_plan.should_review,
             should_exercise=action_plan.should_exercise,
-            english_level=pedagogical.estimated_level,
-            target_skill=pedagogical.target_skill,
-            detected_skill=pedagogical.detected_skill,
+            english_level=brain.student.estimated_level,
+            target_skill=brain.state.skill_focus.teaching,
+            detected_skill=brain.state.skill_focus.detected,
         )
 
 
