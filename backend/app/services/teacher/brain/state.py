@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.services.teacher.student.models import StudentState
-from app.services.teacher.pedagogy.teaching_models import TeachingStrategyPlan
 
 from .models import (
     TeacherPerception,
@@ -37,8 +36,6 @@ class TeacherBrainState:
     reflection: TeacherReflection
 
     planning: TeacherActionPlan
-
-    teaching: TeachingStrategyPlan
 
     lesson: LessonState
 

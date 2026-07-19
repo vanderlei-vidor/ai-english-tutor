@@ -112,21 +112,6 @@ class TeacherLogger:
         self._field("TONE", getattr(state, "tone", None))
         self._field("REASON", getattr(state, "teacher_reason", None))
 
-    def _teaching(self, teaching) -> None:
-        self._section("TEACHING")
-        self._field("STRATEGY", getattr(teaching, "strategy", None))
-        self._field("EXPLANATION", getattr(teaching, "explanation_style", None))
-        self._field("FEEDBACK", getattr(teaching, "feedback_style", None))
-        self._field("QUESTION", getattr(teaching, "question_style", None))
-        self._field("EXAMPLE", getattr(teaching, "example_style", None))
-        self._field("EXERCISE", getattr(teaching, "exercise_style", None))
-        self._field("REVEAL ANSWER", getattr(teaching, "reveal_answer", None))
-        self._field("WAIT STUDENT", getattr(teaching, "wait_student", None))
-
-        explanation = getattr(teaching, "explanation", None)
-        self._field("DIFFICULTY", getattr(explanation, "difficulty", None))
-        self._field("SCAFFOLDING", getattr(explanation, "scaffolding", None))
-
     def _prompt(self, state) -> None:
         instructions = getattr(state, "instructions", [])
         constraints = getattr(state, "constraints", [])
@@ -146,11 +131,10 @@ class TeacherLogger:
         """
         state = getattr(brain_state, "state", None)
         student = getattr(brain_state, "student", None)
-        teaching = getattr(brain_state, "teaching", None)
 
         print()
         print("=" * 60)
-        print("TEACHER BRAIN 3.0 (COMPONENTS-BASED)")
+        print("TEACHER BRAIN (COMPONENTS-BASED)")
         print("=" * 60)
 
         if state:
@@ -166,9 +150,6 @@ class TeacherLogger:
         if state:
             self._lesson(state)
             self._decision(state)
-
-        if teaching:
-            self._teaching(teaching)
 
         if state:
             self._prompt(state)

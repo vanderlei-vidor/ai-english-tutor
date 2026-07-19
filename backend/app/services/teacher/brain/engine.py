@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from app.services.teacher.pedagogy.teaching_engine import (
-    teaching_engine,
-)
-
 from .perception import (
     teacher_perception_engine,
 )
@@ -95,13 +91,8 @@ class TeacherBrain:
                 lesson,
             )
 
-        teaching_plan = teaching_engine.build(
-            state,
-        )
-
         teacher_prompt = teacher_prompt_builder.build(
             plan,
-            teaching_plan,
         )
 
         return TeacherBrainState(
@@ -110,7 +101,6 @@ class TeacherBrain:
             perception=perception,
             reflection=reflection,
             planning=plan,
-            teaching=teaching_plan,
             lesson=lesson,
             prompt=teacher_prompt,
         )
