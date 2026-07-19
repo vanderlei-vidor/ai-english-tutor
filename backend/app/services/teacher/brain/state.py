@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.services.teacher.response.models import TeacherResponsePlan
 from app.services.teacher.student.models import StudentState
 from app.services.teacher.pedagogy.teaching_models import TeachingStrategyPlan
 
@@ -30,7 +29,7 @@ class TeacherBrainState:
     """
 
     state: TeachingState
-    
+
     student: StudentState
 
     perception: TeacherPerception
@@ -42,7 +41,5 @@ class TeacherBrainState:
     teaching: TeachingStrategyPlan
 
     lesson: LessonState
-
-    response: TeacherResponsePlan
 
     prompt: TeacherPrompt

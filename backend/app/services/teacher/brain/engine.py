@@ -21,9 +21,6 @@ from .state import (
 from app.services.teacher.lesson.manager import (
     lesson_manager,
 )
-from app.services.teacher.response.planner import (
-    teacher_response_planner,
-)
 from app.services.teacher.prompt.builder import (
     teacher_prompt_builder,
 )
@@ -97,14 +94,11 @@ class TeacherBrain:
                 plan,
                 lesson,
             )
-            
+
         teaching_plan = teaching_engine.build(
             state,
         )
 
-        response = teacher_response_planner.create_response_plan(
-            plan,
-        )
         teacher_prompt = teacher_prompt_builder.build(
             plan,
             teaching_plan,
@@ -118,7 +112,6 @@ class TeacherBrain:
             planning=plan,
             teaching=teaching_plan,
             lesson=lesson,
-            response=response,
             prompt=teacher_prompt,
         )
 
