@@ -1,15 +1,6 @@
 from __future__ import annotations
 
 from app.services.teacher.context import TeacherContext
-
-from app.services.teacher.decision.teacher_execution_engine import (
-    teacher_execution_engine,
-)
-
-from app.services.teacher.registry import (
-    teacher_registry,
-)
-
 from app.services.teacher.result import (
     TeacherResult,
 )
@@ -29,24 +20,21 @@ class TeacherEngine:
     Coordena o Teacher Brain.
 
     O TeacherEngine não toma decisões.
-    Ele apenas coordena o fluxo.
+    Ele apenas coordena o fluxo de pensamento
+    e delega a execução ao plano produzido pelo Brain.
 
         Context
             ↓
-        Decision Engine
+        Teacher Brain (perception → reflection → planning)
             ↓
-        Registry
-            ↓
-        Strategy
-            ↓
-        TeacherDecision
+        TeacherResult (brain_state)
     """
 
     def decide(
         self,
         context: TeacherContext,
     ) -> TeacherResult:
-        
+
         brain_state = teacher_brain.think(
             context,
         )
@@ -54,28 +42,6 @@ class TeacherEngine:
         teacher_logger.brain(
             brain_state,
         )
-
-        decision = teacher_execution_engine.decide(
-            context=context,
-            action_plan=brain_state.planning,
-        )
-
-        strategy = teacher_registry.select(
-            intent=decision.intent,
-            context=context,
-        )
-
-        strategy.build(
-            brain_state,
-        )
-
-        print()
-        print("=" * 60)
-        print("TEACHER BRAIN")
-        print("=" * 60)
-        print(f"Intent  : {decision.intent.value}")
-        print(f"Strategy: {strategy.__class__.__name__}")
-        print("=" * 60)
 
         lesson_manager.set_last_action(
             brain_state.planning.action,

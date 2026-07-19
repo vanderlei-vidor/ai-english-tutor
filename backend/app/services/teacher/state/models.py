@@ -22,16 +22,6 @@ class TeachingState:
 
     target_skill: str | None = None
 
-    # ==========================
-    # Grammar
-    # ==========================
-
-    has_error: bool = False
-
-    detected_skill: str | None = None
-
-    target_skill: str | None = None
-
     skill_focus: SkillFocus = field(
         default_factory=SkillFocus,
     )
