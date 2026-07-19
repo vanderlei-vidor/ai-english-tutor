@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from app.services.grammar_engine.models import GrammarAnalysis
 from app.services.pedagogical.analysis import PedagogicalAnalysis
@@ -21,6 +22,10 @@ class TeacherContext:
     grammar: GrammarAnalysis
 
     pedagogical: PedagogicalAnalysis
+
+    # Memória de longo prazo do aluno — usada pelos
+    # seletores adaptativos (ex.: StudentSkillSelector).
+    memory_data: dict[str, Any] = field(default_factory=dict)
 
     # Opcionais
     known_error: dict | None = None

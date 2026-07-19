@@ -110,6 +110,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             user_id=request.user_id,
             grammar=analysis,
             pedagogical=pedagogical,
+            memory_data=user_memory.data,
             known_error=known_error,
             conversation_id=conversation.id,
             message=user_text,

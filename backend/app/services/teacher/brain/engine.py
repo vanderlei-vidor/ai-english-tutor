@@ -65,7 +65,7 @@ class TeacherBrain:
 
         memory_state_sync.synchronize(
             state,
-            context.pedagogical,
+            context,
         )
 
         reflection = teacher_reflection_engine.reflect(
