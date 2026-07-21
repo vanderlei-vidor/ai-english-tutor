@@ -19,14 +19,17 @@ from app.services.teacher.prompt.models import (
 from app.services.teacher.state.models import (
     TeachingState,
 )
+from app.services.teacher.pedagogy.models import (
+    TeachingStrategyPlan,
+)
+
+from app.services.teacher.pedagogy.models import (
+    TeachingStrategyPlan,
+    TeachingExecution,
+)
+
 @dataclass(slots=True)
 class TeacherBrainState:
-    """
-    Estado completo do cérebro do professor.
-
-    Todas as etapas do raciocínio ficam reunidas aqui.
-    """
-
     state: TeachingState
 
     student: StudentState
@@ -37,6 +40,12 @@ class TeacherBrainState:
 
     planning: TeacherActionPlan
 
+    teaching: TeachingStrategyPlan
+    
+    execution: TeachingExecution 
+
     lesson: LessonState
 
     prompt: TeacherPrompt
+
+    

@@ -8,6 +8,9 @@ from .models import (
 from app.services.teacher.constants.interruption_levels import (
     InterruptionLevel,
 )
+from app.services.exercise_engine import (
+    choose_exercise_type,
+)
 from app.services.teacher.state.models import (
     TeachingState,
 )
@@ -55,7 +58,12 @@ class TeacherPlanningEngine:
         self._sync_state(
             state,
             plan,
-        )   
+        )
+
+        self._populate_exercise_type(
+            plan,
+            state.memory_data,
+        )
 
         return plan
     # ==========================================================
@@ -186,6 +194,7 @@ class TeacherPlanningEngine:
         self,
         plan: TeacherActionPlan,
         lesson,
+        memory_data: dict | None = None,
     ) -> TeacherActionPlan:
 
         phase = self._phase_value(
@@ -197,6 +206,11 @@ class TeacherPlanningEngine:
         self._apply_response_decision(
             plan,
             phase=phase,
+        )
+
+        self._populate_exercise_type(
+            plan,
+            memory_data or {},
         )
 
         return plan
@@ -406,5 +420,16 @@ class TeacherPlanningEngine:
         state.lesson_goal = plan.goal
 
         state.lesson_phase = plan.phase
+
+    def _populate_exercise_type(
+        self,
+        plan: TeacherActionPlan,
+        memory_data: dict,
+    ) -> None:
+
+        if plan.generate_exercise and memory_data:
+            plan.exercise_type = choose_exercise_type(
+                memory_data,
+            )
 
 teacher_planning_engine = TeacherPlanningEngine()

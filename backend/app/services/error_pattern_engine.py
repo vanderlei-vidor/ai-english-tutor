@@ -3,138 +3,135 @@ import re
 
 def detect_known_error(text: str) -> dict | None:
     """
-    Detecta erros clássicos de estudantes A1/A2 usando Regex
-    alinhado perfeitamente com o motor de Adaptive Weakness Tracker.
+    Detector de erros conhecidos — apenas identifica skill, confiança e regra.
+    Não produz correções; quem decide ensinar é o TeacherBrain.
     """
     text = text.lower().strip()
 
-    # Mapeamento com suporte a Regex para flexibilidade espacial (.*)
-    # e \b para garantir a correspondência de palavras exatas.
     patterns = {
         # === 1. VERB USAGE ===
         r"\btalk\s+english\b": {
             "skill": "verb_usage",
-            "correction": "I speak English.",
-            "explanation": "Em inglês usamos 'speak English' para idiomas, não 'talk'.",
+            "confidence": 0.95,
+            "rule": "Use 'speak' for languages, not 'talk'",
         },
         r"\bneed\s+learning\b": {
             "skill": "verb_usage",
-            "correction": "I need to learn English.",
-            "explanation": "Após o verbo 'need', usamos o infinitivo com 'to' (need to learn).",
+            "confidence": 0.90,
+            "rule": "After 'need', use infinitive with 'to' (need to learn)",
         },
         # === 2. THIRD PERSON ===
         r"\b(she|he|it)\s+don'?t\b": {
             "skill": "third_person",
-            "correction": "He/She doesn't like it.",
-            "explanation": "Para a terceira pessoa do singular (He, She, It), o correto é usar 'doesn't'.",
+            "confidence": 0.95,
+            "rule": "Third person singular requires 'doesn't', not 'don't'",
         },
-        # === 3. PAST TENSE (Erros de estrutura e verbos irregulares) ===
+        # === 3. PAST TENSE ===
         r"\bgo.*\byesterday\b": {
             "skill": "past_tense",
-            "correction": "I went yesterday.",
-            "explanation": "Marcadores de passado como 'yesterday' exigem o verbo no passado simples (went).",
+            "confidence": 0.95,
+            "rule": "Past time markers like 'yesterday' require past tense verb form",
         },
         r"\bbuyed\b": {
             "skill": "past_tense",
-            "correction": "bought",
-            "explanation": "O verbo 'buy' é irregular. O seu passado correto é 'bought'.",
+            "confidence": 0.98,
+            "rule": "'buy' is irregular — past form is 'bought'",
         },
         r"\bgoed\b": {
             "skill": "past_tense",
-            "correction": "went",
-            "explanation": "O verbo 'go' é irregular. O seu passado correto é 'went'.",
+            "confidence": 0.98,
+            "rule": "'go' is irregular — past form is 'went'",
         },
         # === 4. ARTICLES ===
         r"\ba\s+(apple|orange|egg|hour|it)\b": {
             "skill": "articles",
-            "correction": "an apple / an hour",
-            "explanation": "Usamos o artigo 'an' antes de palavras que começam com som de vogal.",
+            "confidence": 0.90,
+            "rule": "Use 'an' before vowel sounds",
         },
         r"\ban\s+(car|computer|house|book|man)\b": {
             "skill": "articles",
-            "correction": "a car / a house",
-            "explanation": "Usamos o artigo 'a' antes de palavras que começam com som de consoante.",
+            "confidence": 0.90,
+            "rule": "Use 'a' before consonant sounds",
         },
         r"\bbought\s+computer\b": {
             "skill": "articles",
-            "correction": "bought a computer",
-            "explanation": "Substantivos contáveis no singular (como computer) exigem um artigo antes (a/the).",
+            "confidence": 0.92,
+            "rule": "Countable singular nouns require an article (a/the)",
         },
         r"\bbought\s+car\b": {
             "skill": "articles",
-            "correction": "bought a car",
-            "explanation": "Substantivos contáveis no singular (como car) exigem um artigo antes (a/the).",
+            "confidence": 0.92,
+            "rule": "Countable singular nouns require an article (a/the)",
         },
         r"\bhave\s+dog\b": {
             "skill": "articles",
-            "correction": "have a dog",
-            "explanation": "Em inglês, precisamos usar o artigo antes do animal no singular: 'have a dog'.",
+            "confidence": 0.90,
+            "rule": "Singular countable nouns need an article: 'have a dog'",
         },
         r"\bis\s+teacher\b": {
             "skill": "articles",
-            "correction": "is a teacher",
-            "explanation": "Sempre usamos artigos indefinidos (a/an) antes de profissões no singular em inglês.",
+            "confidence": 0.90,
+            "rule": "Professions in singular require an indefinite article (a/an)",
         },
         r"\bare\s+engineer\b": {
             "skill": "articles",
-            "correction": "are an engineer",
-            "explanation": "Usamos artigos antes de profissões. Como 'engineer' começa com som de vogal, o correto é 'an engineer'.",
+            "confidence": 0.90,
+            "rule": "Professions require an article; 'engineer' takes 'an'",
         },
         # === 5. PREPOSITIONS ===
         r"\bdepend\s+of\b": {
             "skill": "prepositions",
-            "correction": "depend on",
-            "explanation": "Em inglês, a regência correta é 'depend on', e não 'of'.",
+            "confidence": 0.95,
+            "rule": "Correct collocation is 'depend on', not 'depend of'",
         },
         r"\bmarried\s+with\b": {
             "skill": "prepositions",
-            "correction": "married to",
-            "explanation": "Dizemos que alguém é casado 'to' outra pessoa em inglês (married to).",
+            "confidence": 0.95,
+            "rule": "Use 'married to', not 'married with'",
         },
         r"\bgood\s+in\s+english\b": {
             "skill": "prepositions",
-            "correction": "good at English",
-            "explanation": "Para falar sobre habilidades em algo, usamos a preposição 'at' (good at / bad at).",
+            "confidence": 0.92,
+            "rule": "Skills use 'good at', not 'good in'",
         },
         r"\barrived\s+in\s+the\s+airport\b": {
             "skill": "prepositions",
-            "correction": "arrived at the airport",
-            "explanation": "Para locais ou pontos específicos na cidade (como aeroportos), usamos a preposição 'at'.",
+            "confidence": 0.90,
+            "rule": "Specific points/locations use 'at', not 'in'",
         },
         r"\binterested\s+on\b": {
             "skill": "prepositions",
-            "correction": "interested in",
-            "explanation": "O adjetivo 'interested' é sempre acompanhado pela preposição 'in'.",
+            "confidence": 0.95,
+            "rule": "'Interested' collocates with 'in', not 'on'",
         },
         r"\blisten\s+music\b": {
             "skill": "prepositions",
-            "correction": "listen to music",
-            "explanation": "O verbo 'listen' exige a preposição 'to' quando indicamos o que estamos ouvindo.",
+            "confidence": 0.95,
+            "rule": "'Listen' requires 'to' when followed by an object",
         },
         r"\bgo\s+to\s+home\b": {
             "skill": "prepositions",
-            "correction": "go home",
-            "explanation": "Com a palavra 'home' não se usa a preposição 'to' quando combinada com verbos de movimento.",
+            "confidence": 0.92,
+            "rule": "With 'home' as destination, omit 'to' (go home)",
         },
         # === 6. NOUNS ===
         r"\binformations\b": {
             "skill": "nouns",
-            "correction": "information",
-            "explanation": "A palavra 'information' é incontável em inglês e não tem plural com 's'.",
+            "confidence": 0.98,
+            "rule": "'Information' is uncountable — no plural with 's'",
         },
         r"\badvices\b": {
             "skill": "nouns",
-            "correction": "advice",
-            "explanation": "A palavra 'advice' (conselho) é incontável, use apenas 'advice' ou 'pieces of advice'.",
+            "confidence": 0.98,
+            "rule": "'Advice' is uncountable — use 'advice' or 'pieces of advice'",
         },
         r"\bpeoples\b": {
             "skill": "nouns",
-            "correction": "people",
-            "explanation": "A palavra 'people' já é o plural coletivo de pessoa. Não use 'peoples'.",
+            "confidence": 0.95,
+            "rule": "'People' is already plural — do not add 's'",
         },
     }
 
-    # Varredura utilizando o motor de expressões regulares
     for pattern, data in patterns.items():
         if re.search(pattern, text):
             return data

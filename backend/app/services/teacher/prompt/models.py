@@ -7,8 +7,6 @@ from dataclasses import dataclass, field
 class TeacherPrompt:
     mode: str = ""
 
-    action: str = ""
-
     tone: str = ""
 
     style: str = ""
@@ -27,6 +25,18 @@ class TeacherPrompt:
 
     wait_student: bool = True
 
-    instructions: list[str] = field(default_factory=list)
+    handler: str = ""
 
-    constraints: list[str] = field(default_factory=list)
+    purpose: str = ""
+
+    execution_instructions: list[str] = field(
+        default_factory=list,
+    )
+
+    instructions: list[str] = field(
+        default_factory=list,
+    )
+
+    constraints: list[str] = field(
+        default_factory=list,
+    )

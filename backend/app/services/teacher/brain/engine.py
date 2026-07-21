@@ -31,7 +31,12 @@ from app.services.teacher.state.memory_sync import (
 from app.services.teacher.student.manager import (
     student_manager,
 )
-
+from app.services.teacher.pedagogy.engine import (
+    teaching_engine,
+)
+from app.services.teacher.pedagogy.executor import (
+    teaching_executor,
+)
 
 class TeacherBrain:
     """
@@ -51,6 +56,12 @@ class TeacherBrain:
         context,
     ):
         state = TeachingState()
+
+        state.memory_data = getattr(
+            context,
+            "memory_data",
+            {},
+        ) or {}
 
         student = student_manager.load(
             context,
@@ -79,6 +90,8 @@ class TeacherBrain:
             state=state,
         )
 
+        teaching = teaching_engine.build(state,)
+
         lesson = lesson_manager.update(
             action_plan=plan,
             state=state,
@@ -89,11 +102,39 @@ class TeacherBrain:
             plan = teacher_planning_engine.apply_lesson_phase(
                 plan,
                 lesson,
+                memory_data=state.memory_data,
             )
-
-        teacher_prompt = teacher_prompt_builder.build(
-            plan,
+        execution = teaching_executor.execute(
+            lesson=lesson,
+            script=teaching.script,
+            target_skill=plan.target_skill,
         )
+        teacher_prompt = teacher_prompt_builder.build(
+            plan=plan,
+            execution=execution,
+        )
+
+        print()
+
+        print("=" * 60)
+        print("TEACHING EXECUTION")
+        print("=" * 60)
+
+        print("HANDLER :", execution.handler)
+
+        print("PURPOSE :", execution.step.purpose)
+
+        print("WAIT :", execution.wait_student)
+
+        print("QUESTION :", execution.ask_question)
+
+        print("REVEAL :", execution.reveal_answer)
+
+        print()
+
+        print(execution.prompt_instruction)
+
+        print("=" * 60)
 
         return TeacherBrainState(
             state=state,
@@ -101,6 +142,8 @@ class TeacherBrain:
             perception=perception,
             reflection=reflection,
             planning=plan,
+            teaching=teaching,
+            execution=execution,
             lesson=lesson,
             prompt=teacher_prompt,
         )

@@ -6,16 +6,6 @@ from app.services.skill_score_service import (
 )
 
 
-_VALID_SKILLS = {
-    "past_tense",
-    "articles",
-    "prepositions",
-    "verb_usage",
-    "third_person",
-    "pronouns",
-}
-
-
 class StudentSkillSelector:
     """
     Seleciona a skill pedagógica prioritária com base
@@ -36,11 +26,11 @@ class StudentSkillSelector:
         )
 
         if not skill_scores:
-            return None
+            return "past_tense"
 
         return get_highest_priority_skill(
             memory_data,
-        )
+        ) or "past_tense"
 
 
 student_skill_selector = StudentSkillSelector()

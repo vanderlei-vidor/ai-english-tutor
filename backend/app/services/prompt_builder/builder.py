@@ -14,6 +14,8 @@ from app.services.teacher.brain.state import (
 from app.services.prompt_builder.static.base_prompt import (
     SYSTEM_INSTRUCTION,
 )
+
+
 class StaticPromptBuilder:
     def build(self):
 
@@ -21,6 +23,7 @@ class StaticPromptBuilder:
 
 
 static_prompt_builder = StaticPromptBuilder()
+
 
 class PromptBuilder:
     """
@@ -34,10 +37,13 @@ class PromptBuilder:
     ) -> PromptContext:
 
         action_plan = brain.planning
+        execution = brain.execution
 
         return PromptContext(
             teacher_strategy=action_plan.teaching_mode,
             teacher_action=action_plan.action,
+            teacher_handler=execution.handler,
+            teacher_purpose=execution.purpose,
             teacher_reason=action_plan.teacher_reason,
             explanation_level=action_plan.explanation_level,
             confidence=action_plan.confidence,

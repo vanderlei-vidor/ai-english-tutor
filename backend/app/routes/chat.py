@@ -27,6 +27,9 @@ from app.services.xp_service import calculate_xp, get_level_from_xp
 from app.services.pedagogical.sanitizer import (
     pedagogical_sanitizer,
 )
+from app.services.pedagogical.analysis_engine import (
+    pedagogical_analysis_engine,
+)
 from app.services.debug.manager import debug
 
 from app.services.prompt_builder.builder import (
@@ -63,10 +66,6 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         user_text = request.message
 
         analysis = grammar_engine.analyze(user_text)
-
-        from app.services.pedagogical.analysis_engine import (
-            pedagogical_analysis_engine,
-        )
 
         debug.grammar.log(analysis)
 
@@ -122,8 +121,6 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
 
         brain_state = teacher_result.brain
 
-        # conversation_analysis = teacher_result.conversation
-
         print()
         print("=" * 60)
         print("BRAIN FINAL ACTION")
@@ -135,10 +132,6 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             teacher_result.brain,
             pedagogical,
         )
-
-        # conversation_logger.analysis(
-        #    teacher_result.brain,
-        # )
 
         debug.pedagogical.analysis(pedagogical)
 

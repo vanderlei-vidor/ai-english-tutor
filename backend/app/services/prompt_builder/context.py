@@ -21,6 +21,10 @@ class PromptContext:
 
     teacher_action: str = ""
 
+    teacher_handler: str = ""
+
+    teacher_purpose: str = ""
+
     teacher_reason: str = ""
 
     explanation_level: str = "normal"

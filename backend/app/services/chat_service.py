@@ -2,25 +2,21 @@ import os
 import json
 import time
 import re
-import random
 import requests
+from dataclasses import dataclass
 from dotenv import load_dotenv
-from app.services.memory_utils import get_top_errors, get_top_topics
-from app.services.exercise_engine import should_generate_exercise, choose_exercise_type
-from app.services.error_pattern_engine import detect_known_error
+from app.services.memory_utils import get_top_topics
+from app.services.exercise_engine import choose_exercise_type
 
-# Importação da nova Skill Exercise Engine (Fase 9)
 from app.services.skill_exercise_engine import get_skill_specific_exercise
 
-# 🎓 MUDANÇA 3: Importe centralizado no topo para evitar duplicidade nos escopos locais
 from app.services.level_estimator import estimate_level
-from app.services.personalized_learning_engine import get_weakest_skill
 
 from app.services.prompt_builder.static.builder import (
     static_prompt_builder,
 )
 from app.services.teacher.response.executor import (
-    teacher_response_executor,
+    teacher_output,
 )
 
 load_dotenv()
@@ -28,15 +24,32 @@ load_dotenv()
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234/v1/chat/completions")
 MODEL_NAME = os.getenv("LM_STUDIO_MODEL", "qwen2.5-7b-instruct")
 
+MAX_REGENERATION_ATTEMPTS = 1
+
+REQUIRED_JSON_FIELDS = [
+    "grammar_confidence",
+    "needs_correction",
+    "teacher_action",
+    "correction",
+    "explanation_pt",
+    "example",
+    "exercise",
+    "conversation_reply",
+]
+
+VALID_ACTIONS = ["chat", "question", "exercise", "correction"]
 
 static_prompt_builder.build()
-# ==========================================
-# VALIDATION ENGINE & GUARDRAILS
-# ==========================================
+
+
+@dataclass
+class ResponseValidation:
+    is_valid: bool
+    reason: str = ""
 
 
 def validate_correction(correction: str, needs_correction: bool) -> str:
-    """Filtra correções inválidas ou vazias geradas por preguiça do modelo."""
+    """Filtra correções vagas geradas pelo modelo."""
     if not needs_correction:
         return correction
 
@@ -61,97 +74,113 @@ def validate_correction(correction: str, needs_correction: bool) -> str:
     return correction
 
 
-def _validate_multiple_choice(ex: str) -> bool:
-    return "_____" in ex and ("(a)" in ex or "a)" in ex)
+def is_invalid_correction(correction: str) -> bool:
+    if not correction:
+        return True
+
+    correction = correction.lower().strip()
+
+    bad_starts = [
+        "you need",
+        "you should",
+        "try to",
+        "remember to",
+        "don't forget",
+        "change",
+        "add",
+        "remove",
+        "use",
+        "put",
+        "insert",
+        "the correct sentence is",
+        "the correct form is",
+        "the sentence should be",
+    ]
+
+    return any(correction.startswith(prefix) for prefix in bad_starts)
 
 
-def _validate_fill_blank(ex: str) -> bool:
-    return "_____" in ex and not any(opt in ex for opt in ["(a)", "a)", "b)"])
+def _validate_response_json(response_json: dict) -> ResponseValidation:
+    """
+    Valida a resposta do LLM sem modificar conteúdo pedagógico.
+    Retorna inválido quando a resposta precisa ser regenerada.
+    """
+    for field in REQUIRED_JSON_FIELDS:
+        if field not in response_json or response_json[field] is None:
+            return ResponseValidation(
+                is_valid=False,
+                reason=f"Missing required field: {field}",
+            )
 
-
-def _validate_verb_transformation(ex: str) -> bool:
-    ex_low = ex.lower()
-    return "(" in ex and ")" in ex and ("to " in ex_low or "verb" in ex_low)
-
-
-def _validate_sentence_reordering(ex: str) -> bool:
-    return "/" in ex and len(ex.split("/")) >= 3
-
-
-def _validate_sentence_correction(ex: str) -> bool:
-    return len(ex.split()) >= 3 and not "_____" in ex
-
-
-def validate_and_fix_exercise(
-    exercise: str, exercise_type: str, theme: str, target_skill: str
-) -> str:
-    """Guardrail do Backend com Validadores Granulares para o Modelo 7B."""
-    ex_clean = exercise.strip()
-    placeholders = ["word1", "word2", "[incorrect sentence]", "subject", "action"]
-
-    if any(p in ex_clean.lower() for p in placeholders) or not ex_clean:
-        print(
-            f"⚠️ [Guardrail] Placeholder detectado ou vazio. Gerando fallback completo."
+    teacher_action = response_json.get("teacher_action", "chat")
+    if teacher_action not in VALID_ACTIONS:
+        return ResponseValidation(
+            is_valid=False,
+            reason=f"Invalid teacher_action: {teacher_action}",
         )
-        return _generate_backend_fallback(exercise_type, theme, target_skill)
 
-    validators = {
-        "multiple_choice": _validate_multiple_choice,
-        "fill_blank": _validate_fill_blank,
-        "verb_transformation": _validate_verb_transformation,
-        "sentence_reordering": _validate_sentence_reordering,
-        "sentence_correction": _validate_sentence_correction,
-    }
-
-    validator_func = validators.get(exercise_type)
-
-    if validator_func and not validator_func(ex_clean):
-        print(
-            f"⚠️ [Guardrail] Falha estrutural no tipo '{exercise_type}'. Injetando fallback limpo."
-        )
-        return _generate_backend_fallback(exercise_type, theme, target_skill)
-
-    return ex_clean
-
-
-def _generate_backend_fallback(
-    exercise_type: str, theme: str, target_skill: str
-) -> str:
-    is_anime = theme.lower() == "anime"
-    subject = "Naruto" if is_anime else "He"
-    action_past = "watched an anime" if is_anime else "bought a laptop"
-    action_present = "watches anime" if is_anime else "studies English"
-
-    fallbacks = {
-        "multiple_choice": f"{subject} _____ {action_past} yesterday. (a) went (b) {'watched' if is_anime else 'bought'}",
-        "fill_blank": f"Fill the blank ({target_skill}): {subject} _____ {action_present} every single day.",
-        "sentence_reordering": f"Order the words about {theme}: {subject} / English / loves / studying"
-        if not is_anime
-        else "Naruto / become / wants / Hokage / to",
-        "sentence_correction": f"Correct the error: {subject} do not like {'anime' if is_anime else 'studying'}.",
-        "verb_transformation": f"Change the verb to {target_skill}: {subject} (to watch) a new episode last night."
-        if is_anime
-        else f"Change the verb to {target_skill}: {subject} (to buy) a computer yesterday.",
-    }
-    return fallbacks.get(
-        exercise_type,
-        f"Let's practice {target_skill}! Fill the blank: {subject} _____ happy. (is/are)",
+    handler = response_json.get(
+        "teacher_handler",
     )
 
 
-def _build_memory_context(
-    allowed_mode,
-    exercise_focus,
-    exercise_type,
-    theme,
-    english_level,
+    needs_correction = response_json.get(
+        "needs_correction",
+        False,
+    )
+
+    correction = response_json.get(
+        "correction",
+        "",
+    )
+
+    if handler == "CorrectionHandler" and needs_correction:
+        validated = validate_correction(
+            correction,
+            needs_correction=True,
+        )
+
+        if not validated or is_invalid_correction(validated):
+            return ResponseValidation(
+                is_valid=False,
+                reason=("CorrectionHandler requires a valid correction."),
+            )
+
+    if not response_json.get("conversation_reply", "").strip():
+        return ResponseValidation(
+            is_valid=False,
+            reason="Empty conversation_reply",
+        )
+
+    return ResponseValidation(is_valid=True)
+
+
+def _build_brain_memory_context(
+    brain,
     memory_data,
-    exercise_required,
 ) -> str:
+    plan = brain.planning
+
+    target_skill = plan.target_skill or "conversation"
+
+    english_level = brain.student.estimated_level or memory_data.get(
+        "english_level", "A2"
+    )
+
+    exercise_type = plan.exercise_type or choose_exercise_type(memory_data)
+
+    favorite_topics = memory_data.get("favorite_topics", {})
+    top_topics = get_top_topics(
+        favorite_topics if isinstance(favorite_topics, dict) else {}
+    )
+    theme = top_topics[0].lower() if top_topics else "technology"
+
+    exercise_required = plan.generate_exercise
+
     return f"""
 ### DYNAMIC USER CONTEXT ###
-ALLOWED TEACHING MODE FOR THIS TURN: {allowed_mode} (Strictly obey this directive!)
-MANDATORY TARGET SKILL TO TRAIN: {exercise_focus}
+ALLOWED TEACHING MODE FOR THIS TURN: {plan.teaching_mode} (Strictly obey this directive!)
+MANDATORY TARGET SKILL TO TRAIN: {target_skill}
 Exercise Format Required: {exercise_type}
 Exercise Theme: {theme}
 User English Level: {english_level}
@@ -205,141 +234,23 @@ def _parse_response_json(raw_text) -> dict:
     return json.loads(cleaned_text)
 
 
-def _apply_known_error_detection(
-    response_json,
-    messages,
-) -> dict:
-
-    known_error = detect_known_error(
-        messages[-1]["content"],
-    )
-
-    print(f"KNOWN ERROR RESULT: {known_error}")
-
-    if not known_error:
-        return response_json
-
-    print(f"🎯 ERROR PATTERN DETECTED -> {known_error['skill']}")
-
-    response_json["detected_skill"] = known_error["skill"]
-
-    response_json["needs_correction"] = True
-
-    response_json["correction"] = known_error["correction"]
-
-    response_json["explanation_pt"] = known_error["explanation"]
-
-    return response_json
-
-
-def _apply_correction_guardrails(
-    response_json,
-    messages,
-    pedagogical,
-) -> dict:
-    confidence = response_json.get("grammar_confidence", 1.0)
-    needs_correction = response_json.get("needs_correction", False)
-
-    original_correction = response_json.get("correction", "")
-
-    response_json["correction"] = validate_correction(
-        original_correction,
-        needs_correction,
-    )
-
-    validated_correction = response_json.get("correction", "")
-
-    if is_invalid_correction(validated_correction):
-        print("⚠️ INVALID CORRECTION FORMAT DETECTED")
-        response_json["correction"] = ""
-
-    if response_json.get("needs_correction") and not response_json.get("correction"):
-        if response_json.get("example"):
-            response_json["correction"] = response_json["example"]
-
-    bad_corrections = [
-        "you're close",
-        "good try",
-        "small mistake",
-        "change",
-        "past tense",
-        "try again",
-        "almost",
-    ]
-    correction_lower = response_json.get("correction", "").lower()
-    if any(bad in correction_lower for bad in bad_corrections):
-        print("⚠️ INVALID CORRECTION DETECTED")
-        response_json["correction"] = ""
-
-    user_msg_clean = messages[-1]["content"].strip().lower() if messages else ""
-    special_corrections = {
-        "talk english": "I speak English.",
-        "talk english with": "I speak English.",
-        "talk english at": "I speak English.",
-    }
-    for trigger, fixed_form in special_corrections.items():
-        if trigger in user_msg_clean:
-            print(f"🎯 SPECIAL CORRECTION TRIGGERED FOR SUBSTRING: '{trigger}'")
-            response_json["needs_correction"] = True
-            response_json["correction"] = fixed_form
-            break
-
-    special_explanations = {
-        "talk english": "Em inglês usamos 'speak English', não 'talk English'.",
-        "she don't": "Na terceira pessoa usamos 'doesn't', não 'don't'.",
-        "go yesterday": "Após marcadores de passado como 'yesterday', usamos o verbo no passado.",
-    }
-    for trigger, explanation in special_explanations.items():
-        if trigger in user_msg_clean:
-            response_json["explanation_pt"] = explanation
-            print(f"🎯 SPECIAL EXPLANATION TRIGGERED FOR SUBSTRING: '{trigger}'")
-            break
-
-    confidence = response_json.get("grammar_confidence", 1.0)
-    needs_correction = response_json.get("needs_correction", False)
-
-    if confidence > 0.95 and not needs_correction:
-        response_json["needs_correction"] = False
-        response_json["correction"] = "Correct! ✨"
-        response_json["explanation_pt"] = (
-            "Sua frase está totalmente correta! Excelente trabalho. 🥳"
-        )
-        response_json["example"] = ""
-
-    if (
-        not response_json.get("conversation_reply")
-        or "keep practicing" in response_json.get("conversation_reply").lower()
-    ):
-        if pedagogical["theme"] == "anime":
-            response_json["conversation_reply"] = (
-                "That's awesome! By the way, who is your favorite anime character?"
-            )
-        else:
-            response_json["conversation_reply"] = (
-                "That sounds cool! Tell me more about that."
-            )
-
-    return response_json
-
-
-def _apply_teacher_action(
+def _apply_teacher_output(
     response_json,
     teacher_result,
 ) -> tuple[dict, str]:
-    response_json = teacher_response_executor.execute(
+    response_json = teacher_output.apply(
         brain=teacher_result.brain,
-        response_json=response_json,
+        llm_response=response_json,
     )
 
-    response_json["teacher_action"] = teacher_result.brain.planning.action
-    teacher_action = teacher_result.brain.planning.action
+    teacher_action = teacher_result.brain.execution.handler
 
     print()
     print("=" * 60)
     print("TEACHER FINAL DECISION")
     print("=" * 60)
 
-    print(f"ACTION: {teacher_result.brain.planning.action}")
+    print(f"ACTION: {teacher_result.brain.execution.handler}")
     print(f"MODE: {teacher_result.brain.planning.teaching_mode}")
     print(f"REASON: {teacher_result.brain.planning.teacher_reason}")
 
@@ -351,163 +262,66 @@ def _apply_teacher_action(
 def _generate_exercise(
     response_json,
     teacher_action,
-    exercise_focus,
-    exercise_type,
+    brain,
     memory_data,
 ) -> dict:
-    if teacher_action == "chat":
+    plan = brain.planning
+
+    target_skill = plan.target_skill or "conversation"
+    exercise_type = plan.exercise_type or choose_exercise_type(memory_data)
+
+    execution_handler = brain.execution.handler
+
+    if execution_handler in ("chat", "correction"):
         response_json["exercise"] = ""
 
-    elif teacher_action == "correction":
-        response_json["exercise"] = ""
-
-    elif teacher_action == "exercise":
-        print(f"🎯 SKILL EXERCISE ENGINE ACTIVATED FOR EXERCISE -> {exercise_focus}")
-
-        # 1. Extração unificada dos níveis para o log
-        memory_level = memory_data.get("english_level", "A2")
-        advanced_structures = memory_data.get("advanced_structures", {})
-        estimated_level = estimate_level(advanced_structures)
-        adaptive_level = estimated_level
-
-        # 🎓 Prints de telemetria
-        print(f"🎓 MEMORY LEVEL: {memory_level}")
-        print(f"🎓 ESTIMATED LEVEL: {estimated_level}")
-        print(f"🎓 ADAPTIVE LEVEL USED: {adaptive_level}")
-        print("==================================================\n")
-
-        # Invocação da engine com o nível dinâmico mapeado
-        response_json["exercise"] = get_skill_specific_exercise(
-            skill=exercise_focus, level=adaptive_level, exercise_type=exercise_type
-        )
-        print(f"🎯 ADAPTIVE EXERCISE GENERATED: {response_json['exercise']}")
-
-    elif teacher_action == "question":
-        # 🎓 MUDANÇA 1 & 3: Limpeza completa do bloco morto redundante e remoção de imports duplicados
+    elif execution_handler in ("exercise", "question"):
         advanced_structures = memory_data.get("advanced_structures", {})
         adaptive_level = estimate_level(advanced_structures)
 
-        # 🎓 MUDANÇA 2: Corrigido o motor adaptativo para passar 'adaptive_level' em vez de 'english_level'
+        print(
+            f"🎯 SKILL EXERCISE ENGINE ACTIVATED -> {target_skill} (level: {adaptive_level})"
+        )
+
         response_json["exercise"] = get_skill_specific_exercise(
-            skill=exercise_focus,
+            skill=target_skill,
             level=adaptive_level,
             exercise_type=exercise_type,
         )
-        print(
-            f"🎯 ADAPTIVE EXERCISE GENERATED (IN QUESTION MODE): {response_json['exercise']}"
-        )
+        print(f"🎯 ADAPTIVE EXERCISE GENERATED: {response_json['exercise']}")
 
     return response_json
-
-
-# ==========================================
-# MAIN RESPONSE ENGINE
-# ==========================================
-def _prepare_pedagogical_context(
-    memory_data,
-) -> dict:
-    conversation_turns = memory_data.get("conversation_turns", 0)
-    messages_since_last_teaching = memory_data.get("messages_since_last_teaching", 5)
-
-    english_level = memory_data.get("english_level", "A2")
-    favorite_topics = memory_data.get("favorite_topics", {})
-
-    top_topics = get_top_topics(
-        favorite_topics if isinstance(favorite_topics, dict) else {}
-    )
-    theme = top_topics[0].lower() if top_topics else "technology"
-
-    weak_skills = memory_data.get("weak_skills", {})
-
-    from app.services.weighted_teaching_engine import choose_teaching_skill
-
-    exercise_focus = choose_teaching_skill(memory_data)
-
-    top_weak_skills = get_top_errors(
-        weak_skills if isinstance(weak_skills, dict) else {}
-    )
-    top_errors = get_top_errors(memory_data.get("common_errors", {}))
-
-    exercise_type = choose_exercise_type(memory_data)
-
-    weakness_score = weak_skills.get(exercise_focus, 0)
-
-    if weakness_score >= 20:
-        teaching_probability = 0.90
-    elif weakness_score >= 10:
-        teaching_probability = 0.70
-    elif weakness_score >= 5:
-        teaching_probability = 0.50
-    else:
-        teaching_probability = 0.20
-
-    hit_teaching_chance = random.random() < teaching_probability
-
-    if messages_since_last_teaching < 2 and weakness_score < 10:
-        allowed_mode = "chat"
-    else:
-        if hit_teaching_chance:
-            allowed_mode = "full" if len(weak_skills) > 0 else "light"
-        elif conversation_turns % 5 == 0 and conversation_turns > 0:
-            allowed_mode = "light"
-        else:
-            allowed_mode = "chat"
-
-    exercise_required = (
-        len(weak_skills) > 0 or should_generate_exercise("", memory_data)
-    ) and allowed_mode in ["light", "full"]
-
-    backend_wants_teaching = allowed_mode == "full" and weakness_score >= 10
-
-    print("\n=== DEBUG PEDAGOGICAL BACKEND ===")
-    print(
-        f"TURNS:            {conversation_turns} | SINCE LAST TEACHING: {messages_since_last_teaching}"
-    )
-    print(
-        f"TEACH PROBABILITY: {teaching_probability * 100}% | CHANCE HIT: {hit_teaching_chance}"
-    )
-    print(
-        f"ROUTED MODE:      {allowed_mode.upper()} | SCORE DE FRAQUEZA: {weakness_score}"
-    )
-    print(f"TARGET SKILL:     {exercise_focus}")
-    print(f"EXERCISE REQUIRED:{exercise_required}")
-    print(f"BACKEND WANTS TEACHING: {backend_wants_teaching}")
-    print("=================================\n")
-
-    return {
-        "allowed_mode": allowed_mode,
-        "exercise_focus": exercise_focus,
-        "exercise_type": exercise_type,
-        "theme": theme,
-        "english_level": english_level,
-        "exercise_required": exercise_required,
-        "backend_wants_teaching": backend_wants_teaching,
-    }
 
 
 def generate_response(
     messages: list, prompt_context, teacher_result, memory_data: dict
 ) -> dict:
-    pedagogical = _prepare_pedagogical_context(memory_data)
 
-    memory_context = _build_memory_context(
-        allowed_mode=pedagogical["allowed_mode"],
-        exercise_focus=pedagogical["exercise_focus"],
-        exercise_type=pedagogical["exercise_type"],
-        theme=pedagogical["theme"],
-        english_level=pedagogical["english_level"],
-        memory_data=memory_data,
-        exercise_required=pedagogical["exercise_required"],
+    brain = teacher_result.brain
+
+    memory_context = _build_brain_memory_context(
+        brain,
+        memory_data,
     )
 
     from app.services.prompt_builder.composer import prompt_composer
 
-    dynamic_prompt = prompt_composer.compose(prompt_context)
+    dynamic_prompt = prompt_composer.compose(
+        prompt_context,
+        teacher_prompt=brain.prompt,
+    )
 
     system_prompt = _build_system_prompt(
         dynamic_prompt,
         memory_context,
     )
+
+    print()
+    print("=" * 60)
+    print("FINAL SYSTEM PROMPT")
+    print("=" * 60)
+    print(system_prompt)
+    print("=" * 60)
 
     full_messages = [
         {
@@ -516,38 +330,55 @@ def generate_response(
         }
     ] + messages
 
-    try:
-        raw_text = _call_llm(
-            full_messages,
-        )
+    response_json = None
+    raw_text = ""
 
-    except Exception:
+    for attempt in range(MAX_REGENERATION_ATTEMPTS + 1):
+        try:
+            raw_text = _call_llm(full_messages)
+            print()
+
+            print("=" * 60)
+            print("RAW LLM RESPONSE")
+            print("=" * 60)
+            print(raw_text)
+            print("=" * 60)
+            response_json = _parse_response_json(raw_text)
+
+        except Exception:
+            if attempt >= MAX_REGENERATION_ATTEMPTS:
+                return _disaster_recovery_json()
+            continue
+
+        validation = _validate_response_json(response_json)
+
+        if validation.is_valid:
+            break
+
+        print(f"⚠️ INVALID LLM RESPONSE (attempt {attempt + 1}): {validation.reason}")
+
+        if attempt < MAX_REGENERATION_ATTEMPTS:
+            full_messages.append(
+                {
+                    "role": "assistant",
+                    "content": raw_text,
+                }
+            )
+            full_messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        f"Your previous response was invalid: {validation.reason}. "
+                        "Regenerate a complete valid JSON response. "
+                        "Obey all Teacher Instructions."
+                    ),
+                }
+            )
+    else:
         return _disaster_recovery_json()
 
     try:
-        response_json = _parse_response_json(
-            raw_text,
-        )
-
-        response_json = _apply_known_error_detection(
-            response_json,
-            messages,
-        )
-
-        VALID_ACTIONS = ["chat", "question", "exercise", "correction"]
-        teacher_action = response_json.get("teacher_action", "chat")
-        if teacher_action not in VALID_ACTIONS:
-            print(f"⚠️ INVALID TEACHER ACTION DETECTED: {teacher_action}")
-            teacher_action = "chat"
-            response_json["teacher_action"] = "chat"
-
-        response_json = _apply_correction_guardrails(
-            response_json,
-            messages,
-            pedagogical,
-        )
-
-        response_json, teacher_action = _apply_teacher_action(
+        response_json, teacher_action = _apply_teacher_output(
             response_json,
             teacher_result,
         )
@@ -555,12 +386,11 @@ def generate_response(
         response_json = _generate_exercise(
             response_json,
             teacher_action,
-            pedagogical["exercise_focus"],
-            pedagogical["exercise_type"],
+            brain,
             memory_data,
         )
 
-        response_json["target_skill"] = pedagogical["exercise_focus"]
+        response_json["target_skill"] = brain.planning.target_skill
 
         return response_json
 
@@ -577,35 +407,9 @@ def _disaster_recovery_json() -> dict:
         "grammar_confidence": 0.0,
         "needs_correction": False,
         "teacher_action": "chat",
-        "correction": "Correct! ✨",
+        "correction": "",
         "explanation_pt": "Análise gramatical momentaneamente offline, mas prossiga!",
         "example": "",
         "exercise": "",
         "conversation_reply": "I'm having a little technical hiccup, but I'm still here! What are you up to today?",
     }
-
-
-def is_invalid_correction(correction: str) -> bool:
-    if not correction:
-        return True
-
-    correction = correction.lower().strip()
-
-    bad_starts = [
-        "you need",
-        "you should",
-        "try to",
-        "remember to",
-        "don't forget",
-        "change",
-        "add",
-        "remove",
-        "use",
-        "put",
-        "insert",
-        "the correct sentence is",
-        "the correct form is",
-        "the sentence should be",
-    ]
-
-    return any(correction.startswith(prefix) for prefix in bad_starts)

@@ -22,21 +22,3 @@ def choose_exercise_type(memory_data):
         allowed = AVAILABLE_TYPES
 
     return random.choice(allowed)
-
-
-def should_generate_exercise(correction: str, memory_data: dict):
-    # Se o usuário errou a frase ATUAL (e a correção não for o nosso texto de sucesso "Correct!")
-    if correction and "Correct!" not in correction:
-        return True
-
-    weak_skills = memory_data.get("weak_skills", {})
-    if not isinstance(weak_skills, dict):
-        return False
-
-    total_weakness = sum(weak_skills.values())
-
-    # Só ativa se o peso das dificuldades acumuladas for relevante
-    if total_weakness >= 10:
-        return True
-
-    return False

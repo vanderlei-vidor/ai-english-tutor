@@ -1,86 +1,210 @@
 import types
 
+
+
 import app.services.chat_service as chat_service
+
+from app.services.error_pattern_engine import detect_known_error
+
 from app.services.teacher.context import TeacherContext
+
 from app.services.teacher.brain.perception import teacher_perception_engine
 
 
-def test_prepare_pedagogical_context_returns_expected_keys(monkeypatch):
+
+
+
+def test_build_brain_memory_context_uses_brain_planning(monkeypatch):
+
     memory_data = {
-        "conversation_turns": 3,
-        "messages_since_last_teaching": 1,
+
         "english_level": "B1",
+
         "favorite_topics": {"sports": 5, "tech": 3},
-        "weak_skills": {"grammar": 15},
-        "common_errors": {},
+
+        "conversation_style": "casual",
+
     }
+
+
+
+    plan = types.SimpleNamespace(
+
+        target_skill="grammar",
+
+        teaching_mode="conversation",
+
+        exercise_type="fill_blank",
+
+        generate_exercise=False,
+
+    )
+
+    student = types.SimpleNamespace(estimated_level="B1")
+
+    brain = types.SimpleNamespace(planning=plan, student=student)
+
+
 
     monkeypatch.setattr(chat_service, "get_top_topics", lambda topics: ["sports"])
-    monkeypatch.setattr(chat_service, "get_top_errors", lambda data: [])
-    monkeypatch.setattr(
-        chat_service, "should_generate_exercise", lambda *_args, **_kwargs: False
-    )
-    monkeypatch.setattr(
-        chat_service, "choose_exercise_type", lambda *_args, **_kwargs: "fill_blank"
-    )
-    monkeypatch.setattr(chat_service.random, "random", lambda: 0.95)
-
-    weighted_module = types.SimpleNamespace(
-        choose_teaching_skill=lambda _memory_data: "grammar"
-    )
-    monkeypatch.setitem(
-        __import__("sys").modules,
-        "app.services.weighted_teaching_engine",
-        weighted_module,
-    )
-
-    pedagogical = chat_service._prepare_pedagogical_context(memory_data)
-
-    assert pedagogical["allowed_mode"] == "chat"
-    assert pedagogical["exercise_focus"] == "grammar"
-    assert pedagogical["exercise_type"] == "fill_blank"
-    assert pedagogical["theme"] == "sports"
-    assert pedagogical["english_level"] == "B1"
-    assert pedagogical["exercise_required"] is False
-    assert pedagogical["backend_wants_teaching"] is False
 
 
-def test_apply_correction_guardrails_sets_default_reply_and_correction():
+
+    context = chat_service._build_brain_memory_context(brain, memory_data)
+
+
+
+    assert "ALLOWED TEACHING MODE FOR THIS TURN: conversation" in context
+
+    assert "MANDATORY TARGET SKILL TO TRAIN: grammar" in context
+
+    assert "Exercise Format Required: fill_blank" in context
+
+    assert "Exercise Theme: sports" in context
+
+    assert "User English Level: B1" in context
+
+    assert "Exercise Required Right Now: NO" in context
+
+
+
+
+
+def test_validate_response_json_accepts_valid_response():
+
     response_json = {
+
         "grammar_confidence": 0.99,
+
         "needs_correction": False,
-        "correction": "",
-        "conversation_reply": "",
+
+        "teacher_action": "chat",
+
+        "correction": "Correct! ✨",
+
+        "explanation_pt": "Sua frase está excelente!",
+
         "example": "",
+
+        "exercise": "",
+
+        "conversation_reply": "That sounds cool!",
+
     }
-    messages = [{"content": "I am good"}]
-    pedagogical = {"theme": "technology"}
 
-    result = chat_service._apply_correction_guardrails(
-        response_json, messages, pedagogical
-    )
 
-    assert result["needs_correction"] is False
-    assert result["correction"] == "Correct! ✨"
-    assert (
-        result["explanation_pt"]
-        == "Sua frase está totalmente correta! Excelente trabalho. 🥳"
-    )
-    assert result["conversation_reply"] == "That sounds cool! Tell me more about that."
+
+    result = chat_service._validate_response_json(response_json)
+
+
+
+    assert result.is_valid is True
+
+
+
+
+
+def test_validate_response_json_rejects_invalid_correction():
+
+    response_json = {
+
+        "grammar_confidence": 0.5,
+
+        "needs_correction": True,
+
+        "teacher_action": "correction",
+
+        "correction": "you need to use past tense",
+
+        "explanation_pt": "Use o passado.",
+
+        "example": "",
+
+        "exercise": "",
+
+        "conversation_reply": "Try again.",
+
+    }
+
+
+
+    result = chat_service._validate_response_json(response_json)
+
+
+
+    assert result.is_valid is False
+
+    assert "correction" in result.reason.lower()
+
+
+
+
+
+def test_detect_known_error_returns_detector_fields_only():
+
+    result = detect_known_error("I go yesterday")
+
+
+
+    assert result is not None
+
+    assert result["skill"] == "past_tense"
+
+    assert "confidence" in result
+
+    assert "rule" in result
+
+    assert "correction" not in result
+
+    assert "explanation" not in result
+
+
+
 
 
 def test_teacher_perception_uses_known_error_when_grammar_has_no_error():
+
     grammar = types.SimpleNamespace(
+
         has_errors=False,
+
         primary_error=None,
+
         current_focus=None,
+
     )
+
     pedagogical = types.SimpleNamespace(target_skill="verb_usage", estimated_level="A2")
-    context = TeacherContext(grammar=grammar, pedagogical=pedagogical)
-    context.known_error = {"skill": "verb_usage"}
+
+    context = TeacherContext(
+
+        user_id="test-user",
+
+        grammar=grammar,
+
+        pedagogical=pedagogical,
+
+    )
+
+    context.known_error = {
+
+        "skill": "verb_usage",
+
+        "confidence": 0.95,
+
+        "rule": "Use 'speak' for languages",
+
+    }
+
+
 
     perception = teacher_perception_engine.perceive(context)
 
+
+
     assert perception.has_error is True
+
     assert perception.detected_skill == "verb_usage"
+
     assert perception.target_skill == "verb_usage"
+

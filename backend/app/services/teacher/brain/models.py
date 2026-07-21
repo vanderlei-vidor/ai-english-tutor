@@ -50,10 +50,6 @@ class TeacherReflection:
 
     teaching_reason: str = ""
 
-    
-
-    
-
 
 @dataclass(slots=True)
 class TeacherActionPlan:
@@ -75,11 +71,11 @@ class TeacherActionPlan:
 
     lesson_type: str = "conversation"
 
-    #phase: str = "conversation"
+    # phase: str = "conversation"
 
     phase: str = "conversation"
 
-    #next_step: str = "chat"
+    # next_step: str = "chat"
 
     next_step: str = "chat"
 
@@ -98,6 +94,11 @@ class TeacherActionPlan:
     requires_exercise: bool = False
 
     requires_review: bool = False
+
+    # Tipo de exercicio a ser gerado quando a aula
+    # entrar na fase de exercise (multiple_choice,
+    # fill_blank, sentence_correction, etc.).
+    exercise_type: str | None = None
 
     # ==========================================
     # Planejamento
@@ -147,6 +148,10 @@ class TeacherActionPlan:
 
     teacher_action: str = "chat"
 
+    teacher_handler: str = ""
+
+    teacher_purpose: str = ""
+
     teacher_reason: str = ""
 
     should_teach: bool = False
@@ -164,5 +169,3 @@ class TeacherActionPlan:
     encouragement_required: bool = False
 
     celebrate_success: bool = False
-
-    

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from app.services.teacher.student.models import (
     StudentState,
@@ -54,6 +55,10 @@ class TeachingState:
 
     teacher_action: str = ""
 
+    teacher_handler: str = ""
+
+    teacher_purpose: str = ""
+
     teacher_mode: str = ""
 
     teacher_reason: str = ""
@@ -61,3 +66,6 @@ class TeachingState:
     response_style: str = ""
 
     tone: str = ""
+
+    # Memória do aluno — usada pelo planning para exercise_type, etc.
+    memory_data: dict[str, Any] = field(default_factory=dict)

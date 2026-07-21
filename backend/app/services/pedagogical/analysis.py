@@ -65,6 +65,10 @@ class PedagogicalAnalysis:
 
     teacher_action: str = ""
 
+    teacher_handler: str = ""
+
+    teacher_purpose: str = ""
+
     needs_correction: bool = False
 
     correction_text: str = ""
